@@ -1,5 +1,6 @@
 "use client";
 
+@import "tailwindcss";
 import styles from "./Staff.module.css";
 
 export default function StaffPage() {
