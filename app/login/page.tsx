@@ -75,7 +75,7 @@ export default function LoginPage() {
         JSON.stringify(user)
       )}; path=/; max-age=604800; SameSite=Lax`;
 
-      switch (user.account_type) {
+      switch (response.data.user.account_type) {
         case "admin":
           router.push("/admin");
           break;
