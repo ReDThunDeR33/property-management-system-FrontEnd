@@ -77,7 +77,7 @@ export default function LoginPage() {
 
       switch (user.account_type) {
         case "admin":
-          router.push("/");
+          router.push("/admin");
           break;
 
         case "staff":
@@ -85,11 +85,11 @@ export default function LoginPage() {
           break;
 
         case "landlord":
-          router.push("/");
+          router.push("/landlord");
           break;
 
         case "tenant":
-          router.push("/");
+          router.push("/tenant");
           break;
 
         default:
