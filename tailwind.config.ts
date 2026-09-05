@@ -9,7 +9,10 @@ const config: Config = {
     extend: {
       colors: {
         dwellix: {
-          500: "#3b82f6", // Replace this hex with your custom Dwellix color
+          50: '#fff0ed',
+          100: '#ffe0d9',
+          500: '#FF5A3D',
+          600: '#e54c30',
         },
       },
     },
