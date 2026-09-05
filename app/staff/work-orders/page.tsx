@@ -21,9 +21,9 @@ const workOrderListItemSchema = z.object({
 const workOrdersResponseSchema = z.object({
   data: z.array(workOrderListItemSchema),
   total: z.coerce.number(),
-  page: z.coerce.number(),
-  limit: z.coerce.number(),
-  totalPages: z.coerce.number(),
+  page: z.coerce.number().optional(),
+  limit: z.coerce.number().optional(),
+  totalPages: z.coerce.number().optional(),
 });
 
 type WorkOrder = z.infer<typeof workOrderListItemSchema>;
@@ -54,7 +54,7 @@ export default function WorkOrdersPage() {
       }
       setOrders(parsed.data.data);
       setTotal(parsed.data.total);
-      setTotalPages(parsed.data.totalPages || 1);
+      setTotalPages(1);
     } catch {
       setError("Failed to load work orders");
     } finally {

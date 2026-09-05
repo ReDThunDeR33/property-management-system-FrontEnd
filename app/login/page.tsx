@@ -70,7 +70,9 @@ export default function LoginPage() {
       document.cookie = `access_token=${encodeURIComponent(
         accessToken
       )}; path=/; max-age=604800; SameSite=Lax`;
-
+      document.cookie = `account_type=${encodeURIComponent(
+        user.account_type
+      )}; path=/; max-age=604800; SameSite=Lax`;
       document.cookie = `user=${encodeURIComponent(
         JSON.stringify(user)
       )}; path=/; max-age=604800; SameSite=Lax`;

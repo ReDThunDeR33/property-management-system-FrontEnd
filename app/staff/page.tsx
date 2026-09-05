@@ -1,6 +1,17 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
+import Link from "next/link";
 import api from "@/lib/axios";
+import { useRouter } from "next/navigation";
+
+function verifyUserCookie(user: any) {
+  if (!user) throw new Error("Invalid user cookie");
+
+  if (user.account_type !== "staff") {
+    const router = useRouter();
+    router.push("/login");
+  }
+}
 
 const dashboardStatsSchema = z.object({
   workOrders: z.object({
@@ -42,13 +53,25 @@ const dashboardStatsSchema = z.object({
 
 type DashboardStats = z.infer<typeof dashboardStatsSchema>;
 
+const issueSchema = z.object({
+  id: z.number(),
+  description: z.string().nullable(),
+  status: z.string(),
+  property: z.object({ unit_number: z.string() }).nullable(),
+});
+type Issue = z.infer<typeof issueSchema>;
+
+const workerSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  worker_area: z.string().nullable(),
+});
+type Worker = z.infer<typeof workerSchema>;
+
 async function getDashboardStats(staffId: string | number, token?: string): Promise<DashboardStats> {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-  const response = await api.get(`/staff/dashboard/stats?staffId=${staffId}`, {
-    headers,
-  });
-
+  const response = await api.get(`/staff/dashboard/stats?staffId=${staffId}`, { headers });
   const parsed = dashboardStatsSchema.safeParse(response.data);
 
   if (!parsed.success) {
@@ -58,10 +81,51 @@ async function getDashboardStats(staffId: string | number, token?: string): Prom
   return parsed.data;
 }
 
+async function getRecentIssues(token?: string): Promise<Issue[]> {
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  let response;
+
+  try {
+    response = await api.get("/staff/issues?limit=5", { headers });
+  }
+  catch (error) {
+    console.error("Error fetching recent issues:", error);
+    return [];
+  }
+  const parsed = z.object({ data: z.array(issueSchema) }).safeParse(response.data);
+
+  if (!parsed.success) return [];
+  return parsed.data.data.filter((issue) => issue.status !== "RESOLVED").slice(0, 3);
+}
+
+async function getBusyWorkers(token?: string): Promise<Worker[]> {
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+  let response;
+  try {
+    response = await api.get("/staff/workers?status=busy&limit=5", { headers });
+  } catch (error) {
+    console.error("Error fetching busy workers:", error);
+    return [];
+  }
+  const parsed = z.object({ data: z.array(workerSchema) }).safeParse(response.data);
+
+  if (!parsed.success) return [];
+  return parsed.data.data;
+}
+
 export default async function StaffDashboard() {
+
   const cookieStore = await cookies();
+
+  const rawCookie = cookieStore.get("user")?.value;
+  const userParsed = rawCookie ? JSON.parse(decodeURIComponent(rawCookie)) : null;
+  verifyUserCookie(userParsed);
+  
   const userCookie = cookieStore.get("user");
   const tokenCookie = cookieStore.get("access_token");
+  const accountType = cookieStore.get("account_type")?.value;
+
 
   let user = null;
   if (userCookie) {
@@ -74,23 +138,14 @@ export default async function StaffDashboard() {
 
   const staffId = user?.id || 1;
   const token = tokenCookie ? decodeURIComponent(tokenCookie.value) : undefined;
-  
+
   const stats = await getDashboardStats(staffId, token);
-
-  // Placeholder arrays to demonstrate where your future list data will map into the UI
-  const recentIssues = [
-    { id: 1, title: "Water Leak in Kitchen", location: "Cedar Valley Estate, Apt 4B", status: "Unassigned", icon: "⚠️", color: "red" },
-    { id: 2, title: "Keycard Access Denied", location: "Ocean View Manor, Main Gate", status: "In Progress", icon: "🔑", color: "blue" }
-  ];
-
-  const activeDispatches = [
-    { id: 1, initials: "JD", name: "John Doe", role: "Plumber", status: "On Site", color: "green" },
-    { id: 2, initials: "SS", name: "Sarah Smith", role: "Electrician", status: "En Route", color: "yellow" }
-  ];
+  const recentIssues = await getRecentIssues(token);
+  const busyWorkers = await getBusyWorkers(token);
 
   return (
     <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
-      
+
       {/* Top 4 Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -120,58 +175,59 @@ export default async function StaffDashboard() {
 
       {/* Bottom Layout: 2/3 and 1/3 columns */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Section: Recent Issues */}
+
+        {/* Left Section: Recent Issues (real data) */}
         <div className="lg:col-span-2 bg-white border border-gray-200 rounded-lg">
-          <div className="p-6 border-b border-gray-100">
+          <div className="p-6 border-b border-gray-100 flex justify-between items-center">
             <h3 className="text-lg font-bold text-gray-900">Recent Issues to Triage</h3>
+            <Link href="/staff/issues" className="text-sm text-dwellix-500">View all</Link>
           </div>
-          <div className="p-0">
+          <div>
+            {recentIssues.length === 0 && (
+              <div className="p-6 text-sm text-gray-500">No open issues right now.</div>
+            )}
             {recentIssues.map((issue, index) => (
-              <div key={issue.id} className={`flex items-center justify-between p-6 ${index !== recentIssues.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 bg-${issue.color}-50 text-${issue.color}-500 rounded flex items-center justify-center`}>
-                    {issue.icon}
-                  </div>
-                  <div>
-                    <div className="font-bold text-gray-900">{issue.title}</div>
-                    <div className="text-sm text-gray-500">{issue.location}</div>
-                  </div>
+              <div
+                key={issue.id}
+                className={`flex items-center justify-between p-6 ${index !== recentIssues.length - 1 ? "border-b border-gray-100" : ""}`}
+              >
+                <div>
+                  <div className="font-bold text-gray-900">{issue.description || "No description"}</div>
+                  <div className="text-sm text-gray-500">{issue.property ? issue.property.unit_number : "-"}</div>
                 </div>
-                <div className={`bg-${issue.color}-100 text-${issue.color}-600 text-xs px-3 py-1 rounded-full`}>
-                  {issue.status}
-                </div>
+                <div className="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full">{issue.status}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Right Section: Active Dispatches */}
+        {/* Right Section: Busy Workers (real data) */}
         <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
-          <h3 className="text-lg font-bold text-gray-900 mb-6">Active Dispatches</h3>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold text-gray-900">Busy Workers</h3>
+            <Link href="/staff/workers" className="text-sm text-dwellix-500">View all</Link>
+          </div>
           <div className="space-y-6 flex-grow">
-            {activeDispatches.map((dispatch) => (
-              <div key={dispatch.id} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-sm font-bold text-gray-600">
-                    {dispatch.initials}
-                  </div>
-                  <div>
-                    <div className="font-bold text-gray-900 text-sm">{dispatch.name}</div>
-                    <div className="text-xs text-gray-500">{dispatch.role}</div>
-                  </div>
+            {busyWorkers.length === 0 && (
+              <div className="text-sm text-gray-500">No workers busy right now.</div>
+            )}
+            {busyWorkers.map((worker) => (
+              <div key={worker.id} className="flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-gray-900 text-sm">{worker.name}</div>
+                  <div className="text-xs text-gray-500">{worker.worker_area || "-"}</div>
                 </div>
-                <div className="flex items-center gap-1 text-xs text-gray-600">
-                  <span className={`w-2 h-2 rounded-full bg-${dispatch.color}-500 block`}></span>
-                  {dispatch.status}
-                </div>
+                <span className="text-xs text-yellow-600">busy</span>
               </div>
             ))}
           </div>
 
-          <button className="mt-8 w-full py-3 border-2 border-dashed border-gray-300 rounded text-gray-500 text-sm">
+          <Link
+            href="/staff/work-orders"
+            className="mt-8 w-full text-center py-3 border-2 border-dashed border-gray-300 rounded text-gray-500 text-sm"
+          >
             + Dispatch Worker
-          </button>
+          </Link>
         </div>
       </div>
     </div>
