@@ -44,6 +44,7 @@ const statusStyle: Record<string, string> = {
   PENDING: "bg-yellow-50 text-yellow-600",
   APPROVED: "bg-green-50 text-green-600",
   REJECTED: "bg-red-50 text-red-600",
+  KICKED: "bg-red-50 text-red-600",
 };
 
 const assignPropertySchema = z.coerce.number().positive("Enter a valid property ID");
@@ -54,7 +55,9 @@ export default function TenantsPage() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [actionError, setActionError] = useState("");
   const [actingOn, setActingOn] = useState<number | null>(null);
+  const [kickedTenantIds, setKickedTenantIds] = useState<Record<number, boolean>>({});
 
   const [propertyIdInputs, setPropertyIdInputs] = useState<Record<number, string>>({});
   const [assignErrors, setAssignErrors] = useState<Record<number, string>>({});
@@ -123,6 +126,7 @@ export default function TenantsPage() {
   const handleApprove = async (tenantId: number) => {
     if (!landlordId) return;
     setActionMessage("");
+    setActionError("");
     setActingOn(tenantId);
 
     try {
@@ -130,9 +134,14 @@ export default function TenantsPage() {
       setTenants((prev) =>
         prev.map((tenant) => (tenant.id === tenantId ? { ...tenant, status: response.data.status } : tenant))
       );
+      setKickedTenantIds((prev) => {
+        const next = { ...prev };
+        delete next[tenantId];
+        return next;
+      });
       setActionMessage("Tenant approved.");
     } catch (error) {
-      setActionMessage("Could not approve tenant.");
+      setActionError("Could not approve tenant.");
     } finally {
       setActingOn(null);
     }
@@ -144,6 +153,7 @@ export default function TenantsPage() {
     if (!confirmed) return;
 
     setActionMessage("");
+    setActionError("");
     setActingOn(tenantId);
 
     try {
@@ -153,7 +163,50 @@ export default function TenantsPage() {
       );
       setActionMessage("Tenant rejected.");
     } catch (error) {
-      setActionMessage("Could not reject tenant.");
+      setActionError("Could not reject tenant.");
+    } finally {
+      setActingOn(null);
+    }
+  };
+
+  const handleKick = async (tenantId: number) => {
+    if (!landlordId) return;
+    const confirmed = window.confirm("Kick this tenant? This will reject their tenancy.");
+    if (!confirmed) return;
+
+    setActionMessage("");
+    setActionError("");
+    setActingOn(tenantId);
+
+    try {
+      const response = await api.patch(`/landlord/tenant/kick/${landlordId}/${tenantId}`);
+      setTenants((prev) =>
+        prev.map((tenant) =>
+          tenant.id === tenantId
+            ? { ...tenant, status: response.data.status, property: null }
+            : tenant
+        )
+      );
+      setKickedTenantIds((prev) => ({ ...prev, [tenantId]: true }));
+      // clear any leftover input/error for this tenant so the assign form starts fresh
+      setPropertyIdInputs((prev) => ({ ...prev, [tenantId]: "" }));
+      setAssignErrors((prev) => ({ ...prev, [tenantId]: "" }));
+      setActionMessage("Tenant kicked.");
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const backendMessage = error.response?.data?.message;
+        if (Array.isArray(backendMessage)) {
+          setActionError(backendMessage[0]);
+        } else if (typeof backendMessage === "string") {
+          setActionError(backendMessage);
+        } else if (!error.response) {
+          setActionError("Cannot connect to the backend");
+        } else {
+          setActionError(`Could not kick tenant (status ${error.response.status})`);
+        }
+      } else {
+        setActionError("Could not kick tenant.");
+      }
     } finally {
       setActingOn(null);
     }
@@ -217,6 +270,7 @@ export default function TenantsPage() {
         {loading && <p className="text-gray-500">Loading tenants...</p>}
         {!loading && errorMessage && <p className="text-red-500">{errorMessage}</p>}
         {actionMessage && <p className="text-green-600 mb-4">{actionMessage}</p>}
+        {actionError && <p className="text-red-500 mb-4">{actionError}</p>}
 
         {!loading && !errorMessage && tenants.length === 0 && (
           <p className="text-gray-500">No tenants found.</p>
@@ -224,80 +278,105 @@ export default function TenantsPage() {
 
         {!loading && !errorMessage && tenants.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {tenants.map((tenant) => (
-              <div key={tenant.id} className="bg-white border border-gray-200 rounded-xl p-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-semibold text-lg">{tenant.name}</h2>
-                  <span className={`text-xs px-2 py-1 rounded-full ${statusStyle[tenant.status]}`}>
-                    {tenant.status}
-                  </span>
+            {tenants.map((tenant) => {
+              const isKicked = tenant.status === "REJECTED" && kickedTenantIds[tenant.id];
+              const displayStatus = isKicked ? "KICKED" : tenant.status;
+
+              return (
+                <div key={tenant.id} className="bg-white border border-gray-200 rounded-xl p-6">
+                  <div className="flex items-center justify-between">
+                    <h2 className="font-semibold text-lg">{tenant.name}</h2>
+                    <span className={`text-xs px-2 py-1 rounded-full ${statusStyle[displayStatus]}`}>
+                      {displayStatus}
+                    </span>
+                  </div>
+                  <p className="text-gray-500 text-sm mt-2">{tenant.email}</p>
+                  <p className="text-gray-500 text-sm">{tenant.phone}</p>
+                  <p className="text-gray-500 text-sm mt-2">NID: {tenant.nid_number}</p>
+                  <p className="text-gray-500 text-sm">Vehicle: {tenant.has_vehicle ? "Yes" : "No"}</p>
+
+                  {tenant.status === "PENDING" && (
+                    <div className="flex gap-2 mt-4">
+                      <button
+                        onClick={() => handleApprove(tenant.id)}
+                        disabled={actingOn === tenant.id}
+                        className="flex-1 bg-[#FF5A3D] text-white text-sm py-2 rounded-lg"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleReject(tenant.id)}
+                        disabled={actingOn === tenant.id}
+                        className="flex-1 border border-gray-300 text-gray-600 text-sm py-2 rounded-lg"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+
+                  {tenant.status === "APPROVED" && (
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                      {tenant.property ? (
+                        <p className="text-sm">
+                          Property:{" "}
+                          <Link
+                            href={`/landlord/Properties/${tenant.property.id}`}
+                            className="text-[#FF5A3D] font-medium"
+                          >
+                            {tenant.property.unit_number}
+                          </Link>{" "}
+                          <span className="text-gray-500">
+                            (${Number(tenant.property.rent_amount).toLocaleString()}/mo)
+                          </span>
+                        </p>
+                      ) : (
+                        <form onSubmit={(e) => handleAssignProperty(e, tenant.id)} className="flex gap-2">
+                          <input
+                            type="number"
+                            placeholder="Property ID"
+                            value={propertyIdInputs[tenant.id] ?? ""}
+                            onChange={(e) =>
+                              setPropertyIdInputs((prev) => ({ ...prev, [tenant.id]: e.target.value }))
+                            }
+                            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          />
+                          <button
+                            type="submit"
+                            disabled={assigningOn === tenant.id}
+                            className="bg-[#FF5A3D] text-white text-sm px-3 py-2 rounded-lg"
+                          >
+                            {assigningOn === tenant.id ? "Assigning..." : "Assign"}
+                          </button>
+                        </form>
+                      )}
+                      {assignErrors[tenant.id] && (
+                        <p className="text-red-500 text-xs mt-2">{assignErrors[tenant.id]}</p>
+                      )}
+
+                      <button
+                        onClick={() => handleKick(tenant.id)}
+                        disabled={actingOn === tenant.id}
+                        className="w-full border border-red-300 text-red-600 text-sm py-2 rounded-lg mt-3"
+                      >
+                        Kick Tenant
+                      </button>
+                    </div>
+                  )}
+
+                  {isKicked && (
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                      <button
+                        onClick={() => handleApprove(tenant.id)}
+                        disabled={actingOn === tenant.id}
+                        className="w-full bg-[#FF5A3D] text-white text-sm py-2 rounded-lg"
+                      >
+                        Re-approve Tenant
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <p className="text-gray-500 text-sm mt-2">{tenant.email}</p>
-                <p className="text-gray-500 text-sm">{tenant.phone}</p>
-                <p className="text-gray-500 text-sm mt-2">NID: {tenant.nid_number}</p>
-                <p className="text-gray-500 text-sm">Vehicle: {tenant.has_vehicle ? "Yes" : "No"}</p>
-
-                {tenant.status === "PENDING" && (
-                  <div className="flex gap-2 mt-4">
-                    <button
-                      onClick={() => handleApprove(tenant.id)}
-                      disabled={actingOn === tenant.id}
-                      className="flex-1 bg-[#FF5A3D] text-white text-sm py-2 rounded-lg"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleReject(tenant.id)}
-                      disabled={actingOn === tenant.id}
-                      className="flex-1 border border-gray-300 text-gray-600 text-sm py-2 rounded-lg"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )}
-
-                {tenant.status === "APPROVED" && (
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    {tenant.property ? (
-                      <p className="text-sm">
-                        Property:{" "}
-                        <Link
-                          href={`/landlord/Properties/${tenant.property.id}`}
-                          className="text-[#FF5A3D] font-medium"
-                        >
-                          {tenant.property.unit_number}
-                        </Link>{" "}
-                        <span className="text-gray-500">
-                          (${Number(tenant.property.rent_amount).toLocaleString()}/mo)
-                        </span>
-                      </p>
-                    ) : (
-                      <form onSubmit={(e) => handleAssignProperty(e, tenant.id)} className="flex gap-2">
-                        <input
-                          type="number"
-                          placeholder="Property ID"
-                          value={propertyIdInputs[tenant.id] ?? ""}
-                          onChange={(e) =>
-                            setPropertyIdInputs((prev) => ({ ...prev, [tenant.id]: e.target.value }))
-                          }
-                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                        />
-                        <button
-                          type="submit"
-                          disabled={assigningOn === tenant.id}
-                          className="bg-[#FF5A3D] text-white text-sm px-3 py-2 rounded-lg"
-                        >
-                          {assigningOn === tenant.id ? "Assigning..." : "Assign"}
-                        </button>
-                      </form>
-                    )}
-                    {assignErrors[tenant.id] && (
-                      <p className="text-red-500 text-xs mt-2">{assignErrors[tenant.id]}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
