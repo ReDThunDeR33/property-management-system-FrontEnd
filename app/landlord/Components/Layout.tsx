@@ -50,16 +50,22 @@ export default function Layout({ children }: Props) {
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    const userData = getCookie("user");
-    if (userData) {
-      try {
-        const parsedUser = JSON.parse(userData);
-        setUser(parsedUser);
-      } catch (err) {
-        console.error("Error parsing user cookie:", err);
-      }
-    }
-  }, []);
+  const userData = getCookie("user");
+  const token = getCookie("access_token");
+
+  if (!userData || !token) {
+    router.push("/login");
+    return;
+  }
+
+  try {
+    const parsedUser = JSON.parse(userData);
+    setUser(parsedUser);
+  } catch (err) {
+    console.error("Error parsing user cookie:", err);
+    router.push("/login");
+  }
+}, [router]);
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
 
@@ -89,7 +95,7 @@ export default function Layout({ children }: Props) {
   const handleLogout = () => {
     // 1. Destroy auth cookies
     deleteCookie("user");
-    deleteCookie("token"); // Clears token if also set in cookies
+    deleteCookie("access_token"); // Clears access_token if also set in cookies
 
     // 2. Clear state
     setUser(null);
