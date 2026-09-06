@@ -1,20 +1,11 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import axios from "axios";
 import { z } from "zod";
 import Layout from "../Components/Layout";
 import api from "../../../lib/axios";
 
-function getCookie(name: string) {
-  if (typeof document === "undefined") return null;
-  const value = `; ${document.cookie}`;
-  const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) {
-    return decodeURIComponent(parts.pop()?.split(";").shift() || "");
-  }
-  return null;
-}
+export const dynamic = "force-dynamic";
 
 const dashboardSummarySchema = z.object({
   total_properties: z.union([z.string(), z.number()]),
@@ -23,85 +14,68 @@ const dashboardSummarySchema = z.object({
   total_income: z.union([z.string(), z.number(), z.null()]),
 });
 
-type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
+export default async function DashboardPage() {
+  const cookieStore = await cookies();
+  const userCookie = cookieStore.get("user")?.value;
+  const token = cookieStore.get("access_token")?.value;
 
-export default function DashboardPage() {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+  if (!userCookie || !token) {
+    redirect("/login");
+  }
 
-  useEffect(() => {
-    const fetchSummary = async () => {
-      setLoading(true);
-      setErrorMessage("");
+  let landlordId: number | null = null;
+  try {
+    landlordId = JSON.parse(decodeURIComponent(userCookie))?.id ?? null;
+  } catch (err) {
+    console.error("Error parsing user cookie:", err);
+  }
 
-      const userData = getCookie("user");
-      if (!userData) {
-        setErrorMessage("You are not logged in.");
-        setLoading(false);
-        return;
-      }
+  if (!landlordId) {
+    return (
+      <Layout>
+        <p className="text-red-500">Could not find landlord id.</p>
+      </Layout>
+    );
+  }
 
-      let landlordId: number | null = null;
-      try {
-        const parsedUser = JSON.parse(userData);
-        landlordId = parsedUser?.id ?? null;
-      } catch (err) {
-        console.error("Error parsing user cookie:", err);
-      }
+  let errorMessage = "";
+  let cards: { label: string; value: string }[] = [];
 
-      if (!landlordId) {
-        setErrorMessage("Could not find landlord id.");
-        setLoading(false);
-        return;
-      }
+  try {
+    const response = await api.get("/landlord/dashboard/summery", {
+      params: { landlordId },
+    });
 
-      try {
-        const response = await api.get("/landlord/dashboard/summery", {
-          params: { landlordId },
-        });
+    const raw = Array.isArray(response.data) ? response.data[0] : response.data;
+    const result = dashboardSummarySchema.safeParse(raw);
 
-        const raw = Array.isArray(response.data) ? response.data[0] : response.data;
-        const result = dashboardSummarySchema.safeParse(raw);
-
-        if (!result.success) {
-          setErrorMessage("Dashboard data came back in an unexpected shape.");
-          setLoading(false);
-          return;
-        }
-
-        setSummary(result.data);
-      } catch (error) {
-        if (axios.isAxiosError(error)) {
-          const backendMessage = error.response?.data?.message;
-          if (Array.isArray(backendMessage)) {
-            setErrorMessage(backendMessage[0]);
-          } else if (typeof backendMessage === "string") {
-            setErrorMessage(backendMessage);
-          } else if (!error.response) {
-            setErrorMessage("Cannot connect to the backend");
-          } else {
-            setErrorMessage("Could not load dashboard summary");
-          }
-        } else {
-          setErrorMessage("Something went wrong");
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSummary();
-  }, []);
-
-  const cards = summary
-    ? [
-        { label: "Total Properties", value: summary.total_properties },
-        { label: "Total Tenants", value: summary.total_tenants },
-        { label: "Total Work Orders", value: summary.total_work_orders },
+    if (!result.success) {
+      errorMessage = "Dashboard data came back in an unexpected shape.";
+    } else {
+      const summary = result.data;
+      cards = [
+        { label: "Total Properties", value: String(summary.total_properties) },
+        { label: "Total Tenants", value: String(summary.total_tenants) },
+        { label: "Total Work Orders", value: String(summary.total_work_orders) },
         { label: "Total Income", value: `$${Number(summary.total_income).toLocaleString()}` },
-      ]
-    : [];
+      ];
+    }
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const backendMessage = error.response?.data?.message;
+      if (Array.isArray(backendMessage)) {
+        errorMessage = backendMessage[0];
+      } else if (typeof backendMessage === "string") {
+        errorMessage = backendMessage;
+      } else if (!error.response) {
+        errorMessage = "Cannot connect to the backend";
+      } else {
+        errorMessage = "Could not load dashboard summary";
+      }
+    } else {
+      errorMessage = "Something went wrong";
+    }
+  }
 
   return (
     <Layout>
@@ -112,11 +86,9 @@ export default function DashboardPage() {
           <p className="text-gray-500 mt-2">Summary of your properties, tenants, work orders, and income.</p>
         </div>
 
-        {loading && <p className="text-gray-500">Loading dashboard...</p>}
+        {errorMessage && <p className="text-red-500">{errorMessage}</p>}
 
-        {!loading && errorMessage && <p className="text-red-500">{errorMessage}</p>}
-
-        {!loading && !errorMessage && summary && (
+        {!errorMessage && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {cards.map((card) => (
               <div key={card.label} className="bg-white border border-gray-200 rounded-xl p-6">

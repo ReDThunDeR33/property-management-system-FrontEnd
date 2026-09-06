@@ -1,21 +1,12 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import axios from "axios";
 import { z } from "zod";
 import Layout from "../Components/Layout";
 import api from "../../../lib/axios";
 
-function getCookie(name: string) {
-  if (typeof document === "undefined") return null;
-  const value = `; ${document.cookie}`;
-  const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) {
-    return decodeURIComponent(parts.pop()?.split(";").shift() || "");
-  }
-  return null;
-}
+export const dynamic = "force-dynamic";
 
 const propertySchema = z.object({
   id: z.number(),
@@ -49,69 +40,57 @@ const occupancyStatusLabel: Record<string, string> = {
   sold: "Sold",
 };
 
-export default function PropertiesPage() {
-  const [properties, setProperties] = useState<Property[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+export default async function PropertiesPage() {
+  const cookieStore = await cookies();
+  const userCookie = cookieStore.get("user")?.value;
 
-  useEffect(() => {
-    const fetchProperties = async () => {
-      setLoading(true);
-      setErrorMessage("");
+  if (!userCookie) {
+    redirect("/login");
+  }
 
-      const userData = getCookie("user");
-      if (!userData) {
-        setErrorMessage("You are not logged in.");
-        setLoading(false);
-        return;
+  let landlordId: number | null = null;
+  try {
+    landlordId = JSON.parse(decodeURIComponent(userCookie))?.id ?? null;
+  } catch (err) {
+    console.error("Error parsing user cookie:", err);
+  }
+
+  if (!landlordId) {
+    return (
+      <Layout>
+        <p className="text-red-500">Could not find landlord id.</p>
+      </Layout>
+    );
+  }
+
+  let errorMessage = "";
+  let properties: Property[] = [];
+
+  try {
+    const response = await api.get(`/landlord/properties/${landlordId}`);
+    const result = propertyListSchema.safeParse(response.data);
+
+    if (!result.success) {
+      errorMessage = "Property data came back in an unexpected shape.";
+    } else {
+      properties = result.data;
+    }
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const backendMessage = error.response?.data?.message;
+      if (Array.isArray(backendMessage)) {
+        errorMessage = backendMessage[0];
+      } else if (typeof backendMessage === "string") {
+        errorMessage = backendMessage;
+      } else if (!error.response) {
+        errorMessage = "Cannot connect to the backend";
+      } else {
+        errorMessage = "Could not load properties";
       }
-
-      let landlordId: number | null = null;
-      try {
-        landlordId = JSON.parse(userData)?.id ?? null;
-      } catch (err) {
-        console.error("Error parsing user cookie:", err);
-      }
-
-      if (!landlordId) {
-        setErrorMessage("Could not find landlord id.");
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const response = await api.get(`/landlord/properties/${landlordId}`);
-        const result = propertyListSchema.safeParse(response.data);
-
-        if (!result.success) {
-          setErrorMessage("Property data came back in an unexpected shape.");
-          setLoading(false);
-          return;
-        }
-
-        setProperties(result.data);
-      } catch (error) {
-        if (axios.isAxiosError(error)) {
-          const backendMessage = error.response?.data?.message;
-          if (Array.isArray(backendMessage)) {
-            setErrorMessage(backendMessage[0]);
-          } else if (typeof backendMessage === "string") {
-            setErrorMessage(backendMessage);
-          } else if (!error.response) {
-            setErrorMessage("Cannot connect to the backend");
-          } else {
-            setErrorMessage("Could not load properties");
-          }
-        } else {
-          setErrorMessage("Something went wrong");
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProperties();
-  }, []);
+    } else {
+      errorMessage = "Something went wrong";
+    }
+  }
 
   return (
     <Layout>
@@ -122,13 +101,12 @@ export default function PropertiesPage() {
           <p className="text-gray-500 mt-2">All properties registered under your account.</p>
         </div>
 
-        {loading && <p className="text-gray-500">Loading properties...</p>}
-        {!loading && errorMessage && <p className="text-red-500">{errorMessage}</p>}
-        {!loading && !errorMessage && properties.length === 0 && (
+        {errorMessage && <p className="text-red-500">{errorMessage}</p>}
+        {!errorMessage && properties.length === 0 && (
           <p className="text-gray-500">No properties found.</p>
         )}
 
-        {!loading && !errorMessage && properties.length > 0 && (
+        {!errorMessage && properties.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {properties.map((property) => (
               <Link

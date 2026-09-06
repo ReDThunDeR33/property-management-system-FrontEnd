@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, FormEvent } from "react";
+import Link from "next/link";
 import axios from "axios";
 import { z } from "zod";
 import Layout from "../Components/Layout";
@@ -26,6 +27,14 @@ const tenantSchema = z.object({
   has_vehicle: z.boolean(),
   status: z.enum(["PENDING", "APPROVED", "REJECTED"]),
   created_at: z.string(),
+  property: z
+    .object({
+      id: z.number(),
+      unit_number: z.string(),
+      rent_amount: z.union([z.string(), z.number()]),
+    })
+    .nullable()
+    .optional(),
 });
 
 const tenantListSchema = z.array(tenantSchema);
@@ -37,6 +46,8 @@ const statusStyle: Record<string, string> = {
   REJECTED: "bg-red-50 text-red-600",
 };
 
+const assignPropertySchema = z.coerce.number().positive("Enter a valid property ID");
+
 export default function TenantsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [landlordId, setLandlordId] = useState<number | null>(null);
@@ -44,6 +55,10 @@ export default function TenantsPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [actingOn, setActingOn] = useState<number | null>(null);
+
+  const [propertyIdInputs, setPropertyIdInputs] = useState<Record<number, string>>({});
+  const [assignErrors, setAssignErrors] = useState<Record<number, string>>({});
+  const [assigningOn, setAssigningOn] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchTenants = async () => {
@@ -144,6 +159,52 @@ export default function TenantsPage() {
     }
   };
 
+  const handleAssignProperty = async (event: FormEvent, tenantId: number) => {
+    event.preventDefault();
+    setAssignErrors((prev) => ({ ...prev, [tenantId]: "" }));
+
+    const rawValue = propertyIdInputs[tenantId] ?? "";
+    const result = assignPropertySchema.safeParse(rawValue);
+
+    if (!result.success) {
+      setAssignErrors((prev) => ({ ...prev, [tenantId]: result.error.issues[0].message }));
+      return;
+    }
+    if (!landlordId) return;
+
+    try {
+      setAssigningOn(tenantId);
+      const response = await api.patch(
+        `/landlord/tenant/assign-property/${landlordId}/${tenantId}`,
+        { property_id: result.data }
+      );
+
+      setTenants((prev) =>
+        prev.map((tenant) =>
+          tenant.id === tenantId ? { ...tenant, property: response.data.property } : tenant
+        )
+      );
+      setPropertyIdInputs((prev) => ({ ...prev, [tenantId]: "" }));
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const backendMessage = error.response?.data?.message;
+        if (Array.isArray(backendMessage)) {
+          setAssignErrors((prev) => ({ ...prev, [tenantId]: backendMessage[0] }));
+        } else if (typeof backendMessage === "string") {
+          setAssignErrors((prev) => ({ ...prev, [tenantId]: backendMessage }));
+        } else if (!error.response) {
+          setAssignErrors((prev) => ({ ...prev, [tenantId]: "Cannot connect to the backend" }));
+        } else {
+          setAssignErrors((prev) => ({ ...prev, [tenantId]: "Could not assign property" }));
+        }
+      } else {
+        setAssignErrors((prev) => ({ ...prev, [tenantId]: "Something went wrong" }));
+      }
+    } finally {
+      setAssigningOn(null);
+    }
+  };
+
   return (
     <Layout>
       <section>
@@ -192,6 +253,47 @@ export default function TenantsPage() {
                     >
                       Reject
                     </button>
+                  </div>
+                )}
+
+                {tenant.status === "APPROVED" && (
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    {tenant.property ? (
+                      <p className="text-sm">
+                        Property:{" "}
+                        <Link
+                          href={`/landlord/Properties/${tenant.property.id}`}
+                          className="text-[#FF5A3D] font-medium"
+                        >
+                          {tenant.property.unit_number}
+                        </Link>{" "}
+                        <span className="text-gray-500">
+                          (${Number(tenant.property.rent_amount).toLocaleString()}/mo)
+                        </span>
+                      </p>
+                    ) : (
+                      <form onSubmit={(e) => handleAssignProperty(e, tenant.id)} className="flex gap-2">
+                        <input
+                          type="number"
+                          placeholder="Property ID"
+                          value={propertyIdInputs[tenant.id] ?? ""}
+                          onChange={(e) =>
+                            setPropertyIdInputs((prev) => ({ ...prev, [tenant.id]: e.target.value }))
+                          }
+                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                        />
+                        <button
+                          type="submit"
+                          disabled={assigningOn === tenant.id}
+                          className="bg-[#FF5A3D] text-white text-sm px-3 py-2 rounded-lg"
+                        >
+                          {assigningOn === tenant.id ? "Assigning..." : "Assign"}
+                        </button>
+                      </form>
+                    )}
+                    {assignErrors[tenant.id] && (
+                      <p className="text-red-500 text-xs mt-2">{assignErrors[tenant.id]}</p>
+                    )}
                   </div>
                 )}
               </div>

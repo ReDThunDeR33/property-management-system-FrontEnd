@@ -89,31 +89,30 @@ export default function PropertyDetailPage() {
       }
       setLandlordId(id);
 
+      let propertyMissing = false;
+
       try {
         const response = await api.get(`/landlord/properties/${id}/${propertyId}`);
 
         if (!response.data) {
-          notFound();
-        }
-
-        const result = propertyDetailSchema.safeParse(response.data);
-        if (!result.success) {
-          setErrorMessage("Property data came back in an unexpected shape.");
-          setLoading(false);
-          return;
-        }
-
-        setProperty(result.data);
-        setRentInput(String(result.data.rent_amount));
-        setServiceChargeInput(String(result.data.service_charge ?? ""));
-        setParkingInput(String(result.data.parking_fee ?? ""));
-        setListingStatusInput(result.data.listing_status);
-        setOccupancyInput(result.data.status);
-      } catch (error) {
-        if (axios.isAxiosError(error)) {
-          if (error.response?.status === 404) {
-            notFound();
+          propertyMissing = true;
+        } else {
+          const result = propertyDetailSchema.safeParse(response.data);
+          if (!result.success) {
+            setErrorMessage("Property data came back in an unexpected shape.");
+          } else {
+            setProperty(result.data);
+            setRentInput(String(result.data.rent_amount));
+            setServiceChargeInput(String(result.data.service_charge ?? ""));
+            setParkingInput(String(result.data.parking_fee ?? ""));
+            setListingStatusInput(result.data.listing_status);
+            setOccupancyInput(result.data.status);
           }
+        }
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          propertyMissing = true;
+        } else if (axios.isAxiosError(error)) {
           const backendMessage = error.response?.data?.message;
           if (Array.isArray(backendMessage)) {
             setErrorMessage(backendMessage[0]);
@@ -129,6 +128,12 @@ export default function PropertyDetailPage() {
         }
       } finally {
         setLoading(false);
+      }
+
+      // called outside the try/catch above on purpose — see the notFound() note
+      // at the top of this document
+      if (propertyMissing) {
+        notFound();
       }
     };
 

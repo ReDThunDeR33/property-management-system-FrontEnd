@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
+import Link from "next/link";
 import axios from "axios";
 import { z } from "zod";
 import Layout from "../Components/Layout";
@@ -246,7 +247,11 @@ export default function WorkOrdersPage() {
         {!loading && !errorMessage && workOrders.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {workOrders.map((order) => (
-              <div key={order.id} className="bg-white border border-gray-200 rounded-xl p-6">
+              <Link
+                key={order.id}
+                href={`/landlord/WorkOrders/${order.id}`}
+                className="bg-white border border-gray-200 rounded-xl p-6 hover:border-[#FF5A3D] transition block"
+              >
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">Order #{order.id}</h3>
                   <span className="text-xs px-2 py-1 rounded-full bg-[#fff0ed] text-[#FF5A3D]">
@@ -266,7 +271,7 @@ export default function WorkOrdersPage() {
                   Created {new Date(order.created_at).toLocaleDateString()}
                   {order.completed_at ? ` · Completed ${new Date(order.completed_at).toLocaleDateString()}` : ""}
                 </p>
-              </div>
+              </Link>
             ))}
           </div>
         )}
