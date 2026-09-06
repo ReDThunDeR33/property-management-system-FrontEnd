@@ -32,14 +32,13 @@ function deleteCookie(name: string) {
 }
 
 const navItems = [
-  { href: "/landlord/Dashboard", label: "Dashboard", icon: "▦" },
-  { href: "/landlord/Properties", label: "My Properties", icon: "⌂" },
-  { href: "/landlord/Tenants", label: "Tenants", icon: "👥" },
-  { href: "/landlord/Issues", label: "Issues", icon: "⚠" },
-  { href: "/landlord/WorkOrders", label: "Work Orders", icon: "🔧", badge: "3" },
-  { href: "/landlord/Workers", label: "Workers", icon: "🧰" },
-  { href: "/landlord/Transactions", label: "Transactions", icon: "◫" },
-  { href: "/landlord/Reviews", label: "Reviews", icon: "★" },
+  { href: "/landlord/Dashboard", label: "Dashboard" },
+  { href: "/landlord/Properties", label: "My Properties"},
+  { href: "/landlord/Tenants", label: "Tenants" },
+  { href: "/landlord/Issues", label: "Issues" },
+  { href: "/landlord/WorkOrders", label: "Work Orders" },
+  { href: "/landlord/Transactions", label: "Transactions"},
+  { href: "/landlord/Reviews", label: "Reviews" },
 ];
 
 export default function Layout({ children }: Props) {
@@ -175,13 +174,9 @@ export default function Layout({ children }: Props) {
                       : "text-gray-600 hover:bg-[#fff0ed] hover:text-[#FF5A3D]"
                   }`}
                 >
-                  <span>{item.icon}</span>
+                  
                   {item.label}
-                  {item.badge ? (
-                    <span className="ml-auto bg-[#fff0ed] text-[#FF5A3D] text-xs px-2 py-1 rounded-full">
-                      {item.badge}
-                    </span>
-                  ) : null}
+                  
                 </Link>
               ))}
             </div>
