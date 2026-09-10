@@ -1,25 +1,16 @@
-// Maps backend status/enum values to a tailwind color name, same
-// pattern used for the "issue.color" values on the dashboard page.
+// Turns a status string into a tailwind color name, used for the
+// colored pill badges (bg-{color}-100 text-{color}-600).
+// Plain if-statements on purpose, nothing clever to trace here.
 
-export function statusColor(status: string): string {
-  const map: Record<string, string> = {
-    pending: "yellow",
-    assigned: "blue",
-    tenant_confirmed: "purple",
-    complete: "green",
-    OPEN: "red",
-    IN_PROGRESS: "blue",
-    RESOLVED: "green",
-    free: "green",
-    busy: "yellow",
-    active: "green",
-    deactive: "gray",
-    for_rent: "blue",
-    not_listed: "gray",
-    vacant: "gray",
-    occupied: "green",
-    approved: "green",
-    APPROVED: "green",
-  };
-  return map[status] || "gray";
+export function statusColor(status: string) {
+  if (status === "pending") return "yellow";
+  if (status === "assigned") return "blue";
+  if (status === "tenant_confirmed") return "purple";
+  if (status === "complete") return "green";
+  if (status === "OPEN") return "red";
+  if (status === "IN_PROGRESS") return "blue";
+  if (status === "RESOLVED") return "green";
+  if (status === "free") return "green";
+  if (status === "busy") return "yellow";
+  return "gray";
 }
