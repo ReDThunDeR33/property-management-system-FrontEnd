@@ -88,7 +88,7 @@ export default function LoginPage() {
           break;
 
         case "landlord":
-          router.push("/");
+          router.push("/landlord");
           break;
 
         case "tenant":
