@@ -5,7 +5,6 @@ import { z } from "zod";
 import Layout from "../Components/Layout";
 import api from "../../../lib/axios";
 
-export const dynamic = "force-dynamic";
 
 const dashboardSummarySchema = z.object({
   total_properties: z.union([z.string(), z.number()]),
