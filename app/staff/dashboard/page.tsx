@@ -95,8 +95,28 @@ async function getBusyWorkers(token?: string): Promise<Worker[]> {
 
 export default async function StaffDashboard() {
   const cookieStore = await cookies();
+  const account_type = cookieStore.get("account_type");
+
+  if (!account_type || account_type.value !== "staff") {
+    return (
+      <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
+        <div className="text-center text-red-500 font-bold text-lg">
+          Unauthorized access. Please log in as staff.
+        </div>
+        <div className="text-center">
+          <Link href="/login" className="text-dwellix-500 font-semibold">
+            Go to Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
   const userCookie = cookieStore.get("user");
   const tokenCookie = cookieStore.get("access_token");
+  
+
+  //check if account_type is staff, if not redirect to login page
+
 
   let user = null;
   if (userCookie) {
