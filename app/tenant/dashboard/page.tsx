@@ -50,6 +50,12 @@ export default function TenantDashboardPage() {
         }
 
         const user = JSON.parse(userCookie);
+        const accountTypeCookie = getCookie("account_type");
+        if (accountTypeCookie && accountTypeCookie !== "tenant") {
+          setError("Unauthorized access. Please log in as tenant.");
+          return;
+        }
+
         const tenantId = user.id;
 
         setName(user.name || "Tenant");

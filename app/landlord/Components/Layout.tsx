@@ -91,6 +91,12 @@ export default function Layout({ children }: Props) {
 
     try {
       const parsedUser = JSON.parse(userData);
+
+      if (parsedUser.account_type !== "landlord") {
+        router.push("/login");
+        return;
+      }
+
       setUser(parsedUser);
     } catch (err) {
       console.error("Error parsing user cookie:", err);

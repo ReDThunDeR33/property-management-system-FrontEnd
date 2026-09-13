@@ -17,9 +17,22 @@ export default async function DashboardPage() {
   const cookieStore = await cookies();
   const userCookie = cookieStore.get("user")?.value;
   const token = cookieStore.get("access_token")?.value;
+  const accountType = cookieStore.get("account_type")?.value;
 
   if (!userCookie || !token) {
     redirect("/login");
+  }
+
+  if (accountType !== "landlord") {
+    return (
+      <Layout>
+        <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
+          <div className="text-center text-red-500 font-bold text-lg">
+            Unauthorized access. Please log in as landlord.
+          </div>
+        </div>
+      </Layout>
+    );
   }
 
   let landlordId: number | null = null;

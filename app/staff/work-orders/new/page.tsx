@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import api from "@/lib/axios";
@@ -8,6 +8,14 @@ import { authHeader, getClientUser } from "@/lib/getToken";
 import axios from "axios";
 
 export default function NewWorkOrderPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading...</div>}>
+      <NewWorkOrderForm />
+    </Suspense>
+  );
+}
+
+function NewWorkOrderForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 

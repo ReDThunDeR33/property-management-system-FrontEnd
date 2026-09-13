@@ -43,9 +43,22 @@ const occupancyStatusLabel: Record<string, string> = {
 export default async function PropertiesPage() {
   const cookieStore = await cookies();
   const userCookie = cookieStore.get("user")?.value;
+  const accountType = cookieStore.get("account_type")?.value;
 
   if (!userCookie) {
     redirect("/login");
+  }
+
+  if (accountType !== "landlord") {
+    return (
+      <Layout>
+        <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
+          <div className="text-center text-red-500 font-bold text-lg">
+            Unauthorized access. Please log in as landlord.
+          </div>
+        </div>
+      </Layout>
+    );
   }
 
   let landlordId: number | null = null;
