@@ -10,8 +10,8 @@ const propertySchema = z.object({
   id: z.number(),
   unit_number: z.string(),
   status: z.string().nullable(),
-  landlord: z.object({ name: z.string() }).nullable(),
-  tenant: z.object({ name: z.string() }).nullable(),
+  landlord: z.object({ id: z.number(), name: z.string() }).nullable(),
+  tenant: z.object({ id: z.number(), name: z.string() }).nullable(),
 });
 
 const responseSchema = z.object({ data: z.array(propertySchema) });
@@ -41,7 +41,8 @@ export default function PropertiesPage() {
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-          <div className="col-span-3">Unit</div>
+          <div className="col-span-2">ID</div>
+          <div className="col-span-2">Unit</div>
           <div className="col-span-3">Landlord</div>
           <div className="col-span-3">Tenant</div>
           <div className="col-span-1">Status</div>
@@ -52,9 +53,10 @@ export default function PropertiesPage() {
         {!loading && properties.length === 0 && <div className="p-6 text-sm text-gray-500">No properties found.</div>}
         {!loading && properties.map((p) => (
           <div key={p.id} className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 items-center text-sm">
-            <div className="col-span-3 text-gray-900 font-medium">{p.unit_number}</div>
-            <div className="col-span-3 text-gray-700">{p.landlord ? p.landlord.name : "-"}</div>
-            <div className="col-span-3 text-gray-700">{p.tenant ? p.tenant.name : "-"}</div>
+            <div className="col-span-2 text-gray-900 font-medium">#{p.id}</div>
+            <div className="col-span-2 text-gray-900 font-medium">{p.unit_number}</div>
+            <div className="col-span-3 text-gray-700">{p.landlord ? <div><div>{p.landlord.name}</div><div className="text-xs text-gray-400">Landlord ID: {p.landlord.id}</div></div> : "-"}</div>
+            <div className="col-span-3 text-gray-700">{p.tenant ? <div><div>{p.tenant.name}</div><div className="text-xs text-gray-400">Tenant ID: {p.tenant.id}</div></div> : "-"}</div>
             <div className="col-span-1 text-gray-700">{p.status || "-"}</div>
             <div className="col-span-2 text-right">
               <Link href={`/staff/properties/${p.id}`} className="text-dwellix-500 text-sm font-medium hover:underline">View</Link>

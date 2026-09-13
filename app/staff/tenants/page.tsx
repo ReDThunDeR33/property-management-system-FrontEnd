@@ -10,7 +10,8 @@ const tenantSchema = z.object({
   id: z.number(),
   name: z.string(),
   status: z.string().nullable(),
-  property: z.object({ unit_number: z.string() }).nullable(),
+  property: z.object({ id: z.number(), unit_number: z.string() }).nullable(),
+  approved_by: z.object({ id: z.number(), name: z.string() }).nullable(),
 });
 
 const responseSchema = z.object({ data: z.array(tenantSchema) });
@@ -40,7 +41,8 @@ export default function TenantsPage() {
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-          <div className="col-span-4">Name</div>
+          <div className="col-span-2">ID</div>
+          <div className="col-span-3">Name</div>
           <div className="col-span-3">Property</div>
           <div className="col-span-3">Status</div>
           <div className="col-span-2 text-right">Actions</div>
@@ -49,8 +51,9 @@ export default function TenantsPage() {
         {!loading && tenants.length === 0 && <div className="p-6 text-sm text-gray-500">No tenants found.</div>}
         {!loading && tenants.map((t) => (
           <div key={t.id} className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 items-center text-sm">
-            <div className="col-span-4 text-gray-900 font-medium">{t.name}</div>
-            <div className="col-span-3 text-gray-700">{t.property ? t.property.unit_number : "-"}</div>
+            <div className="col-span-2 text-gray-900 font-medium">#{t.id}</div>
+            <div className="col-span-3 text-gray-900 font-medium">{t.name}</div>
+            <div className="col-span-3 text-gray-700">{t.property ? <div><div>{t.property.unit_number}</div><div className="text-xs text-gray-400">Property ID: {t.property.id}</div></div> : "-"}</div>
             <div className="col-span-3 text-gray-700">{t.status || "-"}</div>
             <div className="col-span-2 text-right">
               <Link href={`/staff/tenants/${t.id}`} className="text-dwellix-500 text-sm font-medium hover:underline">View</Link>

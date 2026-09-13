@@ -9,12 +9,14 @@ import { authHeader } from "@/lib/getToken";
 import { statusColor } from "@/lib/status";
 
 const scheduleSchema = z.object({
-  worker: z.object({ name: z.string() }),
+  worker: z.object({ id: z.number(), name: z.string() }),
   schedule: z.array(
     z.object({
       id: z.number(),
       status: z.string(),
-      property: z.object({ unit_number: z.string() }).nullable(),
+      property: z.object({ id: z.number(), unit_number: z.string() }).nullable(),
+      issue: z.object({ id: z.number(), description: z.string().nullable() }).nullable(),
+      tenant: z.object({ id: z.number(), name: z.string() }).nullable(),
     })
   ),
 });
@@ -42,6 +44,7 @@ export default function WorkerSchedulePage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-900">Schedule: {data.worker.name}</h2>
+        <p className="text-xs text-gray-400 mt-1">Worker ID: {data.worker.id}</p>
         <Link href={`/staff/workers/${id}`} className="text-sm text-dwellix-500 hover:underline">
           &larr; Back to Worker
         </Link>
@@ -57,7 +60,7 @@ export default function WorkerSchedulePage() {
         {data.schedule.map((s) => (
           <div key={s.id} className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 items-center text-sm">
             <div className="col-span-2 text-gray-900">#{s.id}</div>
-            <div className="col-span-6 text-gray-700">{s.property ? s.property.unit_number : "-"}</div>
+            <div className="col-span-6 text-gray-700">{s.property ? <div><div>{s.property.unit_number}</div><div className="text-xs text-gray-400">Property ID: {s.property.id}</div>{s.issue && <div className="text-xs text-gray-400">Issue ID: {s.issue.id}</div>}{s.tenant && <div className="text-xs text-gray-400">Tenant ID: {s.tenant.id}</div>}</div> : "-"}</div>
             <div className="col-span-4">
               <span className={`bg-${statusColor(s.status)}-100 text-${statusColor(s.status)}-600 text-xs px-3 py-1 rounded-full`}>{s.status}</span>
             </div>

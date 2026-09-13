@@ -11,8 +11,8 @@ const issueSchema = z.object({
   id: z.number(),
   description: z.string().nullable(),
   status: z.string(),
-  property: z.object({ unit_number: z.string() }).nullable(),
-  tenant: z.object({ name: z.string() }).nullable(),
+  property: z.object({ id: z.number(), unit_number: z.string() }).nullable(),
+  tenant: z.object({ id: z.number(), name: z.string() }).nullable(),
 });
 
 const responseSchema = z.object({ data: z.array(issueSchema) });
@@ -88,11 +88,21 @@ export default function IssuesPage() {
               </div>
 
               <div className="col-span-2 text-gray-700">
-                {issue.property ? issue.property.unit_number : "-"}
+                {issue.property ? (
+                  <div>
+                    <div>{issue.property.unit_number}</div>
+                    <div className="text-xs text-gray-400">Property ID: {issue.property.id}</div>
+                  </div>
+                ) : "-"}
               </div>
 
               <div className="col-span-2 text-gray-700 truncate">
-                {issue.tenant ? issue.tenant.name : "-"}
+                {issue.tenant ? (
+                  <div>
+                    <div>{issue.tenant.name}</div>
+                    <div className="text-xs text-gray-400">Tenant ID: {issue.tenant.id}</div>
+                  </div>
+                ) : "-"}
               </div>
 
               <div className="col-span-1">

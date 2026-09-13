@@ -16,10 +16,10 @@ const workOrderSchema = z.object({
   labor_cost: z.coerce.number(),
   materials_cost: z.coerce.number(),
   additional_cost: z.coerce.number(),
-  landlord: z.object({ name: z.string() }).nullable(),
-  tenant: z.object({ name: z.string() }).nullable(),
-  property: z.object({ unit_number: z.string() }).nullable(),
-  issue: z.object({ description: z.string().nullable() }).nullable(),
+  landlord: z.object({ id: z.number(), name: z.string() }).nullable(),
+  tenant: z.object({ id: z.number(), name: z.string() }).nullable(),
+  property: z.object({ id: z.number(), unit_number: z.string() }).nullable(),
+  issue: z.object({ id: z.number(), description: z.string().nullable(), property: z.object({ id: z.number() }).nullable(), tenant: z.object({ id: z.number() }).nullable() }).nullable(),
   worker: z.object({ id: z.number(), name: z.string() }).nullable(),
 });
 
@@ -50,6 +50,7 @@ export default function WorkOrderDetailPage() {
   const [materialsCost, setMaterialsCost] = useState("0");
   const [additionalCost, setAdditionalCost] = useState("0");
   const [workerId, setWorkerId] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   function refresh() {
     getWorkOrder(id).then((data) => {
@@ -68,12 +69,17 @@ export default function WorkOrderDetailPage() {
 
   async function handleUpdate(e: FormEvent) {
     e.preventDefault();
-    await api.patch(
+    setErrorMessage("");
+    try {
+      await api.patch(
       `/staff/work-orders/${id}`,
       { status, labor_cost: Number(laborCost), materials_cost: Number(materialsCost), additional_cost: Number(additionalCost) },
       { headers: authHeader() }
-    );
-    refresh();
+      );
+      refresh();
+    } catch (error) {
+      setErrorMessage("Could not update work order");
+    }
   }
 
   async function handleDispatch(e: FormEvent) {
@@ -151,7 +157,16 @@ export default function WorkOrderDetailPage() {
             </div>
           </div>
 
-          <form onSubmit={handleUpdate} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div><div className="text-gray-500">Work Order ID</div><div className="font-medium">{order.id}</div></div>
+        <div><div className="text-gray-500">Issue ID</div><div className="font-medium">{order.issue ? order.issue.id : "-"}</div></div>
+        <div><div className="text-gray-500">Property</div><div className="font-medium">{order.property ? order.property.unit_number : "-"}</div><div className="text-xs text-gray-400">Property ID: {order.property ? order.property.id : "-"}</div></div>
+        <div><div className="text-gray-500">Tenant</div><div className="font-medium">{order.tenant ? order.tenant.name : "-"}</div><div className="text-xs text-gray-400">Tenant ID: {order.tenant ? order.tenant.id : "-"}</div></div>
+        <div><div className="text-gray-500">Landlord</div><div className="font-medium">{order.landlord ? order.landlord.name : "-"}</div><div className="text-xs text-gray-400">Landlord ID: {order.landlord ? order.landlord.id : "-"}</div></div>
+        <div><div className="text-gray-500">Worker</div><div className="font-medium">{order.worker ? order.worker.name : "-"}</div><div className="text-xs text-gray-400">Worker ID: {order.worker ? order.worker.id : "-"}</div></div>
+      </div>
+
+      <form onSubmit={handleUpdate} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
             <h3 className="text-lg font-bold text-gray-900">Update Status & Costs</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>

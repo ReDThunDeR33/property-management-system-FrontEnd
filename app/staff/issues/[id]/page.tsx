@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { z } from "zod";
+import axios from "axios";
 import api from "@/lib/axios";
 import { authHeader } from "@/lib/getToken";
 import { statusColor } from "@/lib/status";
@@ -16,6 +17,7 @@ const issueSchema = z.object({
   status: z.string(),
   property: z.object({ id: z.number(), unit_number: z.string() }).nullable(),
   tenant: z.object({ id: z.number(), name: z.string() }).nullable(),
+  landlord: z.object({ id: z.number(), name: z.string() }).nullable(),
 });
 
 type Issue = z.infer<typeof issueSchema>;
@@ -31,6 +33,17 @@ export default function IssueDetailPage() {
   const id = params.id as string;
   const [issue, setIssue] = useState<Issue | null>(null);
   const [status, setStatus] = useState<IssueStatus>("OPEN");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  function getBackendMessage(error: unknown) {
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.message;
+      if (Array.isArray(message)) return message[0];
+      if (typeof message === "string") return message;
+      if (!error.response) return "Cannot connect to the backend";
+    }
+    return "Something went wrong";
+  }
 
   function refresh() {
     getIssue(id).then((data) => {
@@ -46,8 +59,13 @@ export default function IssueDetailPage() {
 
   async function handleUpdate(e: FormEvent) {
     e.preventDefault();
-    await api.patch(`/staff/issues/${id}/status`, { status }, { headers: authHeader() });
-    refresh();
+    setErrorMessage("");
+    try {
+      await api.patch(`/staff/issues/${id}/status`, { status }, { headers: authHeader() });
+      refresh();
+    } catch (error) {
+      setErrorMessage(getBackendMessage(error));
+    }
   }
 
   if (!issue) return <div className="p-6 text-sm text-gray-500">Loading...</div>;
@@ -71,10 +89,17 @@ export default function IssueDetailPage() {
           <div>
             <div className="text-gray-500">Property</div>
             <div className="text-gray-900 font-medium">{issue.property ? issue.property.unit_number : "-"}</div>
+            <div className="text-xs text-gray-400">Property ID: {issue.property ? issue.property.id : "-"}</div>
           </div>
           <div>
             <div className="text-gray-500">Tenant</div>
             <div className="text-gray-900 font-medium">{issue.tenant ? issue.tenant.name : "-"}</div>
+            <div className="text-xs text-gray-400">Tenant ID: {issue.tenant ? issue.tenant.id : "-"}</div>
+          </div>
+          <div>
+            <div className="text-gray-500">Landlord</div>
+            <div className="text-gray-900 font-medium">{issue.landlord ? issue.landlord.name : "-"}</div>
+            <div className="text-xs text-gray-400">Landlord ID: {issue.landlord ? issue.landlord.id : "-"}</div>
           </div>
           <div className="col-span-2">
             <div className="text-gray-500">Description</div>
@@ -82,6 +107,8 @@ export default function IssueDetailPage() {
           </div>
         </div>
       </div>
+
+      {errorMessage && <p className="text-red-500">{errorMessage}</p>}
 
       <form onSubmit={handleUpdate} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4 max-w-lg">
         <h3 className="text-lg font-bold text-gray-900">Update Status</h3>
@@ -100,7 +127,7 @@ export default function IssueDetailPage() {
       </form>
 
       <Link
-        href={`/staff/work-orders/new?issue_id=${issue.id}&property_id=${issue.property?.id || ""}&tenant_id=${issue.tenant?.id || ""}`}
+        href={`/staff/work-orders/new?issue_id=${issue.id}&property_id=${issue.property?.id || ""}&tenant_id=${issue.tenant?.id || ""}&landlord_id=${issue.landlord?.id || ""}`}
         className="inline-block px-4 py-2 bg-[#ff5a3d] text-white rounded-lg text-sm font-medium hover:bg-[#e64a32] active:scale-95 transition-all duration-150 shadow-sm"
       >
         + Create Work Order

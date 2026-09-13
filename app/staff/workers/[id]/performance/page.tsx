@@ -8,7 +8,8 @@ import api from "@/lib/axios";
 import { authHeader } from "@/lib/getToken";
 
 const perfSchema = z.object({
-  worker: z.object({ name: z.string() }),
+  worker: z.object({ id: z.number(), name: z.string() }),
+  recentOrders: z.array(z.object({ id: z.number(), property: z.string().nullable(), property_id: z.number().nullable(), cost: z.number(), rating: z.string().nullable() })),
   stats: z.object({
     totalCompleted: z.number(),
     averageRating: z.number(),
@@ -38,7 +39,7 @@ export default function WorkerPerformancePage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Performance: {data.worker.name}</h2>
+        <div><h2 className="text-2xl font-bold text-gray-900">Performance: {data.worker.name}</h2><p className="text-xs text-gray-400 mt-1">Worker ID: {data.worker.id}</p></div>
         <Link href={`/staff/workers/${id}`} className="text-sm text-dwellix-500 hover:underline">
           &larr; Back to Worker
         </Link>
@@ -57,6 +58,18 @@ export default function WorkerPerformancePage() {
           <div className="text-gray-500 text-sm mb-2">Revenue Generated</div>
           <div className="text-3xl font-bold text-gray-900">{data.stats.totalRevenueGenerated}</div>
         </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h3 className="font-semibold mb-4">Recent Work Orders</h3>
+        {data.recentOrders.length === 0 && <p className="text-sm text-gray-500">No completed work orders.</p>}
+        {data.recentOrders.map((order) => (
+          <div key={order.id} className="border-b last:border-b-0 py-3">
+            <div className="font-medium">Work Order #{order.id}</div>
+            <div className="text-xs text-gray-400">Property ID: {order.property_id ?? "-"}</div>
+            <div className="text-sm text-gray-600">Cost: {order.cost}</div>
+          </div>
+        ))}
       </div>
     </div>
   );

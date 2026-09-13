@@ -52,7 +52,8 @@ export default function WorkersPage() {
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-          <div className="col-span-4">Name</div>
+          <div className="col-span-1">ID</div>
+          <div className="col-span-3">Name</div>
           <div className="col-span-4">Area</div>
           <div className="col-span-2">Status</div>
           <div className="col-span-2 text-right">Actions</div>
@@ -62,7 +63,8 @@ export default function WorkersPage() {
         {!loading && workers.length === 0 && <div className="p-6 text-sm text-gray-500">No workers found.</div>}
         {!loading && workers.map((worker) => (
           <div key={worker.id} className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 items-center text-sm">
-            <div className="col-span-4 text-gray-900 font-medium">{worker.name}</div>
+            <div className="col-span-1 text-gray-900 font-medium">#{worker.id}</div>
+            <div className="col-span-3 text-gray-900 font-medium">{worker.name}</div>
             <div className="col-span-4 text-gray-700">{worker.worker_area || "-"}</div>
             <div className="col-span-2">
               <span className={`bg-${statusColor(worker.status)}-100 text-${statusColor(worker.status)}-600 text-xs px-3 py-1 rounded-full`}>

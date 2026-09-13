@@ -72,7 +72,7 @@ export default function WorkerDetailPage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">{worker.name}</h2>
+          <div><h2 className="text-2xl font-bold text-gray-900">{worker.name}</h2><p className="text-xs text-gray-400 mt-1">Worker ID: {worker.id}</p></div>
           <span className={`inline-block mt-1 bg-${statusColor(worker.status)}-100 text-${statusColor(worker.status)}-600 text-xs px-3 py-1 rounded-full`}>
             {worker.status}
           </span>

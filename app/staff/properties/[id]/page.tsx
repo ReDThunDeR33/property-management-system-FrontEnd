@@ -12,8 +12,8 @@ const propertySchema = z.object({
   unit_number: z.string(),
   rent_amount: z.coerce.number().nullable(),
   status: z.string().nullable(),
-  landlord: z.object({ name: z.string() }).nullable(),
-  tenant: z.object({ name: z.string() }).nullable(),
+  landlord: z.object({ id: z.number(), name: z.string() }).nullable(),
+  tenant: z.object({ id: z.number(), name: z.string() }).nullable(),
 });
 
 type Property = z.infer<typeof propertySchema>;
@@ -38,7 +38,10 @@ export default function PropertyDetailPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Unit {property.unit_number}</h2>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Unit {property.unit_number}</h2>
+          <p className="text-xs text-gray-400 mt-1">Property ID: {property.id}</p>
+        </div>
         <Link href="/staff/properties" className="text-sm text-dwellix-500 hover:underline">
           &larr; Back to Properties
         </Link>
@@ -48,10 +51,12 @@ export default function PropertyDetailPage() {
         <div>
           <div className="text-gray-500">Landlord</div>
           <div className="text-gray-900 font-medium">{property.landlord ? property.landlord.name : "-"}</div>
+          <div className="text-xs text-gray-400">Landlord ID: {property.landlord ? property.landlord.id : "-"}</div>
         </div>
         <div>
           <div className="text-gray-500">Tenant</div>
           <div className="text-gray-900 font-medium">{property.tenant ? property.tenant.name : "-"}</div>
+          <div className="text-xs text-gray-400">Tenant ID: {property.tenant ? property.tenant.id : "-"}</div>
         </div>
         <div>
           <div className="text-gray-500">Rent</div>

@@ -13,7 +13,8 @@ const tenantSchema = z.object({
   email: z.string().nullable(),
   phone: z.string().nullable(),
   status: z.string().nullable(),
-  property: z.object({ unit_number: z.string() }).nullable(),
+  property: z.object({ id: z.number(), unit_number: z.string() }).nullable(),
+  approved_by: z.object({ id: z.number(), name: z.string() }).nullable(),
 });
 
 type Tenant = z.infer<typeof tenantSchema>;
@@ -38,7 +39,7 @@ export default function TenantDetailPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">{tenant.name}</h2>
+        <div><h2 className="text-2xl font-bold text-gray-900">{tenant.name}</h2><p className="text-xs text-gray-400 mt-1">Tenant ID: {tenant.id}</p></div>
         <Link href="/staff/tenants" className="text-sm text-dwellix-500 hover:underline">
           &larr; Back to Tenants
         </Link>
@@ -56,6 +57,12 @@ export default function TenantDetailPage() {
         <div>
           <div className="text-gray-500">Property</div>
           <div className="text-gray-900 font-medium">{tenant.property ? tenant.property.unit_number : "-"}</div>
+          <div className="text-xs text-gray-400">Property ID: {tenant.property ? tenant.property.id : "-"}</div>
+        </div>
+        <div>
+          <div className="text-gray-500">Approved By</div>
+          <div className="text-gray-900 font-medium">{tenant.approved_by ? tenant.approved_by.name : "-"}</div>
+          <div className="text-xs text-gray-400">Landlord ID: {tenant.approved_by ? tenant.approved_by.id : "-"}</div>
         </div>
         <div>
           <div className="text-gray-500">Status</div>

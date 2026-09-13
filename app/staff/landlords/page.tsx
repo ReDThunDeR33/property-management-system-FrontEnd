@@ -38,14 +38,16 @@ export default function LandlordsPage() {
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-          <div className="col-span-6">Name</div>
+          <div className="col-span-2">ID</div>
+          <div className="col-span-4">Name</div>
           <div className="col-span-6">Email</div>
         </div>
         {loading && <div className="p-6 text-sm text-gray-500">Loading...</div>}
         {!loading && landlords.length === 0 && <div className="p-6 text-sm text-gray-500">No landlords found.</div>}
         {!loading && landlords.map((l) => (
           <div key={l.id} className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 items-center text-sm">
-            <div className="col-span-6 text-gray-900 font-medium">{l.name}</div>
+            <div className="col-span-2 text-gray-900 font-medium">#{l.id}</div>
+            <div className="col-span-4 text-gray-900 font-medium">{l.name}</div>
             <div className="col-span-6 text-gray-700">{l.email || "-"}</div>
           </div>
         ))}
