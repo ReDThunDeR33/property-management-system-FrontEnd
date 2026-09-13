@@ -21,6 +21,8 @@ const issueStatuses = ["OPEN", "IN_PROGRESS", "RESOLVED"] as const;
 const issueSchema = z.object({
   id: z.number(),
   status: z.enum(issueStatuses),
+  description: z.string().optional(),
+  image_url: z.string().nullable().optional(),
   created_at: z.string(),
   // property relation returned with the issue
   property: z
@@ -52,6 +54,19 @@ const statusLabel: Record<string, string> = {
   RESOLVED: "Resolved",
 };
 
+// The next status an issue can move to, in order: OPEN -> IN_PROGRESS -> RESOLVED.
+// RESOLVED is a terminal state (nothing to move to next).
+const nextStatus: Record<string, (typeof issueStatuses)[number] | null> = {
+  OPEN: "IN_PROGRESS",
+  IN_PROGRESS: "RESOLVED",
+  RESOLVED: null,
+};
+
+const nextStatusButtonLabel: Record<string, string> = {
+  OPEN: "Mark In Progress",
+  IN_PROGRESS: "Mark Complete",
+};
+
 export default function IssuesPage() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +85,10 @@ export default function IssuesPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [createSuccess, setCreateSuccess] = useState("");
+
+  // ----- status update state -----
+  const [updatingIssueId, setUpdatingIssueId] = useState<number | null>(null);
+  const [statusUpdateError, setStatusUpdateError] = useState<Record<number, string>>({});
 
   useEffect(() => {
     const fetchIssues = async () => {
@@ -233,6 +252,54 @@ export default function IssuesPage() {
     }
   };
 
+  // PATCH /landlord/issues/:landlordId/:issueId
+  // UpdateIssueDto only declares description?/image_url?, but the landlord
+  // service assigns the whole body onto the issue (Partial<IssueEntity>), so
+  // sending { status } here moves the issue: OPEN -> IN_PROGRESS -> RESOLVED.
+  const handleAdvanceStatus = async (issue: Issue) => {
+    const target = nextStatus[issue.status];
+    if (!landlordId || !target) return;
+
+    setStatusUpdateError((prev) => ({ ...prev, [issue.id]: "" }));
+    setUpdatingIssueId(issue.id);
+
+    try {
+      const response = await api.patch(`/landlord/issues/${landlordId}/${issue.id}`, {
+        status: target,
+      });
+
+      const result = issueSchema.safeParse(response.data);
+
+      if (result.success) {
+        setIssues((prev) => prev.map((i) => (i.id === issue.id ? result.data : i)));
+      } else {
+        // fallback: refetch if the PATCH response shape is unexpected
+        const refreshed = await api.get(`/landlord/issues/${landlordId}`);
+        const refreshedResult = issueListSchema.safeParse(refreshed.data);
+        if (refreshedResult.success) {
+          setIssues(refreshedResult.data);
+        }
+      }
+    } catch (error) {
+      let message = "Could not update issue status";
+      if (axios.isAxiosError(error)) {
+        const backendMessage = error.response?.data?.message;
+        if (Array.isArray(backendMessage)) {
+          message = backendMessage[0];
+        } else if (typeof backendMessage === "string") {
+          message = backendMessage;
+        } else if (!error.response) {
+          message = "Cannot connect to the backend";
+        }
+      } else {
+        message = "Something went wrong";
+      }
+      setStatusUpdateError((prev) => ({ ...prev, [issue.id]: message }));
+    } finally {
+      setUpdatingIssueId(null);
+    }
+  };
+
   const filteredIssues =
     statusFilter === "all" ? issues : issues.filter((issue) => issue.status === statusFilter);
 
@@ -340,22 +407,44 @@ export default function IssuesPage() {
 
         {!loading && !errorMessage && filteredIssues.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredIssues.map((issue) => (
-              <div key={issue.id} className="bg-white border border-gray-200 rounded-xl p-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">Issue #{issue.id}</h3>
-                  <span className={`text-xs px-2 py-1 rounded-full ${statusStyle[issue.status]}`}>
-                    {statusLabel[issue.status]}
-                  </span>
+            {filteredIssues.map((issue) => {
+              const target = nextStatus[issue.status];
+              const isUpdating = updatingIssueId === issue.id;
+
+              return (
+                <div key={issue.id} className="bg-white border border-gray-200 rounded-xl p-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold">Issue #{issue.id}</h3>
+                    <span className={`text-xs px-2 py-1 rounded-full ${statusStyle[issue.status]}`}>
+                      {statusLabel[issue.status]}
+                    </span>
+                  </div>
+                  <p className="text-gray-500 text-xs mt-2">
+                    {issue.property?.id ? `Property #${issue.property.id}` : "No property linked"}
+                  </p>
+                  {issue.description && (
+                    <p className="text-gray-600 text-sm mt-2 line-clamp-3">{issue.description}</p>
+                  )}
+                  <p className="text-gray-400 text-xs mt-3">
+                    Reported {new Date(issue.created_at).toLocaleDateString()}
+                  </p>
+
+                  {statusUpdateError[issue.id] && (
+                    <p className="text-red-500 text-xs mt-2">{statusUpdateError[issue.id]}</p>
+                  )}
+
+                  {target && (
+                    <button
+                      onClick={() => handleAdvanceStatus(issue)}
+                      disabled={isUpdating}
+                      className="mt-4 w-full text-xs px-3 py-2 rounded-lg bg-[#FF5A3D] text-white disabled:opacity-50"
+                    >
+                      {isUpdating ? "Updating..." : nextStatusButtonLabel[issue.status]}
+                    </button>
+                  )}
                 </div>
-                <p className="text-gray-500 text-xs mt-2">
-                  {issue.property?.id ? `Property #${issue.property.id}` : "No property linked"}
-                </p>
-                <p className="text-gray-400 text-xs mt-3">
-                  Reported {new Date(issue.created_at).toLocaleDateString()}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
