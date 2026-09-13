@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LogoutButton from "../app/staff/LogoutButton";
 
 export default function Header() {
   return (
@@ -16,6 +17,9 @@ export default function Header() {
         <Link href="/staff/landlords" className="hover:text-dwellix-500">Landlords</Link>
         <Link href="/staff/reports/worker-performance" className="hover:text-dwellix-500">Reports</Link>
         <Link href="/staff/profile" className="hover:text-dwellix-500">Profile</Link>
+        <div className="ml-5 shrink-0">
+          <LogoutButton />
+        </div>
       </nav>
     </header>
   );

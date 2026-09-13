@@ -62,6 +62,7 @@ export default function LoginPage() {
       const accessToken = response.data.access_token;
       const user = response.data.user;
 
+
       if (!accessToken || !user) {
         setErrorMessage("Invalid response from server");
         return;
@@ -79,7 +80,7 @@ export default function LoginPage() {
 
       switch (response.data.user.account_type) {
         case "admin":
-          router.push("/admin");
+          router.push("/");
           break;
 
         case "staff":
@@ -91,7 +92,7 @@ export default function LoginPage() {
           break;
 
         case "tenant":
-          router.push("/tenant");
+          router.push("/");
           break;
 
         default:
