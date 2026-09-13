@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import Layout from "../../Components/Layout";
+import axios from "axios";
 import api from "../../../../lib/axios";
 
 function getCookie(name: string) {
@@ -13,7 +12,7 @@ function getCookie(name: string) {
 
   if (parts.length === 2) {
     return decodeURIComponent(
-      parts.pop()?.split(";").shift() || ""
+      parts.pop()?.split(";").shift() || "",
     );
   }
 
@@ -22,83 +21,63 @@ function getCookie(name: string) {
 
 export default function ResolveIssueButton({
   issueId,
-  status,
+  onResolved,
 }: {
   issueId: number;
-  status: string;
+  onResolved: () => void;
 }) {
-  const router = useRouter();
-
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [error, setError] = useState("");
 
   const handleResolve = async () => {
-    setLoading(true);
-    setErrorMessage("");
-
-    const userData = getCookie("user");
-
-    if (!userData) {
-      setErrorMessage("You are not logged in.");
-      setLoading(false);
-      return;
-    }
-
-    let tenantId: number | null = null;
-
     try {
-      tenantId = JSON.parse(userData)?.id ?? null;
-    } catch (err) {
-      console.error("Error parsing user cookie:", err);
-    }
+      setLoading(true);
+      setError("");
 
-    if (!tenantId) {
-      setErrorMessage("Could not find tenant id.");
-      setLoading(false);
-      return;
-    }
+      const userCookie = getCookie("user");
 
-    try {
+      if (!userCookie) {
+        setError("User information not found.");
+        return;
+      }
+
+      const user = JSON.parse(userCookie);
+      const tenantId = user.id;
+
       await api.patch(
-        `/tenant/${tenantId}/issues/${issueId}/resolve`
+        `/tenant/${tenantId}/issues/${issueId}/resolve`,
       );
 
-      router.refresh();
-    } catch (error) {
-      console.error("Resolve issue error:", error);
-      setErrorMessage("Could not resolve issue.");
+      onResolved();
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(
+          err.response?.data?.message ||
+            "Could not resolve issue.",
+        );
+      } else {
+        setError("Could not resolve issue.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  if (status === "RESOLVED") {
-    return (
-      <div className="mt-6">
-        <p className="text-green-600 font-medium">
-          Issue Resolved
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="mt-6">
-      {errorMessage && (
-        <p className="text-red-500 mb-3">
-          {errorMessage}
-        </p>
-      )}
-
+    <div className="mt-4">
       <button
         onClick={handleResolve}
         disabled={loading}
-        className="bg-[#FF5A3D] text-white px-5 py-2.5 rounded-lg hover:bg-[#e94e34] transition disabled:opacity-60"
+        className="rounded-lg bg-[#FF5A3D] px-4 py-2 text-white disabled:opacity-60"
       >
-        {loading
-          ? "Updating..."
-          : "Mark as Resolved"}
+        {loading ? "Resolving..." : "Mark as Resolved"}
       </button>
+
+      {error && (
+        <p className="mt-2 text-sm text-red-600">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
