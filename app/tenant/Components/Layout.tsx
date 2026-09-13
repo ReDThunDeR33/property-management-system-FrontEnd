@@ -218,12 +218,12 @@ export default function Layout({ children }: Props) {
       <div className="flex flex-1 min-w-0">
         {/* Sidebar */}
         <aside
-          className={`w-64 lg:min-h-[calc(100vh-80px)] h-[calc(100vh-80px)] lg:h-auto bg-white border-r border-gray-200 flex flex-col overflow-y-auto fixed lg:static top-20 left-0 bottom-0 z-40 transition-transform duration-200 ${
-            sidebarOpen
-              ? "translate-x-0"
-              : "-translate-x-full lg:translate-x-0"
-          }`}
-        >
+  className={`w-64 h-[calc(100vh-80px)] bg-white border-r border-gray-200 flex flex-col overflow-y-auto fixed lg:sticky top-20 left-0 bottom-0 lg:bottom-auto z-40 transition-transform duration-200 flex-shrink-0 ${
+    sidebarOpen
+      ? "translate-x-0"
+      : "-translate-x-full lg:translate-x-0"
+  }`}
+>
           <div className="p-5">
             <p className="text-xs uppercase tracking-widest text-gray-400 mb-4">
               Main Menu
@@ -248,17 +248,7 @@ export default function Layout({ children }: Props) {
           </div>
 
           <div className="mt-auto p-5 border-t border-gray-100">
-            <Link
-              href="/tenant/settings"
-              onClick={closeSidebar}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition ${
-                isActive("/tenant/settings")
-                  ? "bg-[#fff0ed] text-[#FF5A3D] font-semibold"
-                  : "text-gray-600 hover:bg-[#fff0ed] hover:text-[#FF5A3D]"
-              }`}
-            >
-              ⚙ Settings
-            </Link>
+          
 
             <button
               onClick={handleLogout}
@@ -340,14 +330,14 @@ export default function Layout({ children }: Props) {
                 </a>
               </li>
 
-              <li>
+              {/* <li>
                 <Link
                   href="/tenant/settings"
                   className="hover:text-[#FF5A3D] transition"
                 >
                   Account Settings
                 </Link>
-              </li>
+              </li> */}
 
               <li className="text-gray-500">
                 Email:{" "}
