@@ -40,23 +40,36 @@ export default function TenantsPage() {
       <h2 className="text-2xl font-bold text-gray-900">Tenants</h2>
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Total: 12 Cols (1 + 3 + 3 + 3 + 2) */}
         <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-          <div className="col-span-2">ID</div>
+          <div className="col-span-1">ID</div>
           <div className="col-span-3">Name</div>
           <div className="col-span-3">Property</div>
           <div className="col-span-3">Status</div>
           <div className="col-span-2 text-right">Actions</div>
         </div>
+
         {loading && <div className="p-6 text-sm text-gray-500">Loading...</div>}
         {!loading && tenants.length === 0 && <div className="p-6 text-sm text-gray-500">No tenants found.</div>}
         {!loading && tenants.map((t) => (
           <div key={t.id} className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 items-center text-sm">
-            <div className="col-span-2 text-gray-900 font-medium">#{t.id}</div>
+            <div className="col-span-1 text-gray-900 font-medium">#{t.id}</div>
             <div className="col-span-3 text-gray-900 font-medium">{t.name}</div>
-            <div className="col-span-3 text-gray-700">{t.property ? <div><div>{t.property.unit_number}</div><div className="text-xs text-gray-400">Property ID: {t.property.id}</div></div> : "-"}</div>
+            <div className="col-span-3 text-gray-700">
+              {t.property ? (
+                <div>
+                  <div>{t.property.unit_number}</div>
+                  <div className="text-xs text-gray-400">Property ID: {t.property.id}</div>
+                </div>
+              ) : (
+                "-"
+              )}
+            </div>
             <div className="col-span-3 text-gray-700">{t.status || "-"}</div>
             <div className="col-span-2 text-right">
-              <Link href={`/staff/tenants/${t.id}`} className="text-dwellix-500 text-sm font-medium hover:underline">View</Link>
+              <Link href={`/staff/tenants/${t.id}`} className="text-dwellix-500 text-sm font-medium hover:underline">
+                View
+              </Link>
             </div>
           </div>
         ))}
