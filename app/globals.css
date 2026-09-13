@@ -1,7 +1,72 @@
+/* ============================================================
+   Global stylesheet — Tailwind CSS v4 + DaisyUI 5
+   (Course requirement: "Tailwind CSS + plugins (DaisyUI)")
+   ============================================================ */
+
+/* Tailwind v4 entry point (single import replaces the old v3 directives) */
 @import "tailwindcss";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+
+/* ------------------------------------------------------------
+   DaisyUI — the Tailwind plugin our instructor allows us to use.
+   We disable the built-in themes and register ONE custom brand
+   theme below ("dwellix") so every DaisyUI component (btn, card,
+   badge, menu, carousel ...) automatically matches the UI design.
+   ------------------------------------------------------------ */
+@plugin "daisyui" {
+  themes: false;
+}
+
+/* Custom DaisyUI theme: brand colors taken from the Admin UI
+   reference (Admin-FIXED.html): coral #FF5A3D + dark #17212B. */
+@plugin "daisyui/theme" {
+  name: "dwellix";
+  default: true;
+  color-scheme: light;
+
+  --color-primary: #ff5a3d;
+  --color-primary-content: #ffffff;
+  --color-secondary: #17212b;
+  --color-secondary-content: #ffffff;
+  --color-accent: #ff5a3d;
+  --color-accent-content: #ffffff;
+  --color-neutral: #17212b;
+  --color-neutral-content: #ffffff;
+
+  --color-base-100: #ffffff;
+  --color-base-200: #f7f7f4;
+  --color-base-300: #ece9e0;
+  --color-base-content: #252524;
+
+  --color-info: #3ab0ff;
+  --color-info-content: #ffffff;
+  --color-success: #26a269;
+  --color-success-content: #ffffff;
+  --color-warning: #f59f00;
+  --color-warning-content: #ffffff;
+  --color-error: #dc2626;
+  --color-error-content: #ffffff;
+
+  --radius-box: 1rem;
+  --radius-field: 0.5rem;
+  --radius-selector: 0.75rem;
+}
+
+/* ------------------------------------------------------------
+   Brand palette exposed to Tailwind utilities (text-dwellix-500,
+   bg-dwellix-500, ...) and the admin sidebar dark shade.
+   Tailwind v4 native way of defining custom colors (@theme).
+   ------------------------------------------------------------ */
+@theme {
+  --color-dwellix-50: #fff0ed;
+  --color-dwellix-100: #ffe0d9;
+  --color-dwellix-500: #ff5a3d;
+  --color-dwellix-600: #e54c30;
+  --color-admin-dark: #17212b;
+  --color-admin-dark-2: #1d2a36;
+  --color-admin-muted: #9aa5b1;
+}
+
+/* Basic reset kept from the original project */
 * {
   box-sizing: border-box;
 }
