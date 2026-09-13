@@ -2,6 +2,7 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import StaffSidebar from "@/components/StaffSidebar";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
@@ -36,10 +37,14 @@ export default function StaffLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <Header />
-      <main className="flex-1 p-6">{children}</main>
-      <Footer />
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      <StaffSidebar />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header />
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <Footer />
+      </div>
     </div>
   );
 }
