@@ -1,23 +1,5 @@
 "use client";
 
-/* ============================================================
-   ADMIN PROPERTIES PAGE — app/admin/properties/page.tsx  (CSR)
-   ------------------------------------------------------------
-   COURSE CONCEPTS (same set as Blocks/Buildings):
-   1. CSR — "use client" interactive management page
-      (course table: "Admin panel -> CSR").
-   2. REACT HOOKS — useState (lists/modal/form) + useEffect
-      (loads properties + buildings + landlords on mount to
-      feed the parent <select>s).
-   3. ZOD — full form schema (required fields, positive
-      numbers, enum choices) validated with safeParse before
-      any request. Optional number fields use a Zod
-      preprocess that turns "" into undefined. No vanilla or
-      HTML validation.
-   4. AXIOS — axios direct + NEXT_PUBLIC_API_URL (.env.local);
-      GET/POST/PATCH/DELETE with the JWT header. No fetch().
-   5. DAISYUI — table, modal, select, checkbox, alert, btn.
-   ============================================================ */
 
 import { useEffect, useState } from "react";
 import axios from "axios";
@@ -63,9 +45,6 @@ const propertySchema = z.object({
   status: z.enum(["vacant", "occupied", "sold"]),
 });
 
-/* The form state keeps raw input values (strings for number
-   inputs). The Zod schema's z.coerce converts them to numbers
-   during safeParse — state and schema stay decoupled. */
 type PropertyFormState = {
   unit_number: string;
   buildingId: number | string;

@@ -1,39 +1,20 @@
+import { fetchPeopleList, tenantSchema } from "@/lib/adminPeople";
 import AdminTenantManager from "@/components/admin/AdminTenantManager";
-import { getAdminSession } from "@/lib/adminAuth";
-import { getAdminList, tenantListSchema } from "@/lib/adminPeople";
 
 /* ============================================================
-   ADMIN TENANTS PAGE — app/admin/tenants/page.tsx
+   TENANTS PAGE — app/admin/tenants/page.tsx  (SSR)
    ------------------------------------------------------------
-   Same SSR + CSR hybrid as the landlords page: the Server
-   Component fetches (Axios + Zod, cookie JWT) and passes the
-   data via props to the client manager that handles
-   Add / Edit / Delete in the browser. Tenant create also
-   demonstrates the system's approval gate: admin creates as
-   PENDING, a landlord approves.
+   Same SSR + CSR pattern as the landlords page: the server
+   fetches GET /admin/tenant/alltenants (Axios + cookie JWT +
+   Zod validation) on every request, then passes the validated
+   rows into the client manager via PROPS for the interactive
+   Add/Edit/Delete operations.
    ============================================================ */
 
-export default async function AdminTenantsPage() {
-  const session = await getAdminSession();
+export default async function TenantsPage() {
+  // Server-side fetch + Zod validation (password_hash is
+  // stripped by the schema and never reaches the UI)
+  const tenants = await fetchPeopleList("tenant/alltenants", tenantSchema);
 
-  if (!session) {
-    return (
-      <div className="card mx-auto max-w-md border border-base-300 bg-white shadow-sm">
-        <div className="card-body items-center text-center">
-          <h2 className="card-title">Session required</h2>
-          <p className="text-sm text-gray-500">
-            Please log in as an admin again.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const tenants = await getAdminList(
-    "/admin/tenant/alltenants",
-    session.token,
-    tenantListSchema,
-  );
-
-  return <AdminTenantManager initialTenants={tenants} />;
+  return <AdminTenantManager tenants={tenants} />;
 }

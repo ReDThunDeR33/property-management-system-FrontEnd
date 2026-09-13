@@ -1,25 +1,18 @@
-import AdminStatSkeleton from "@/components/admin/AdminStatSkeleton";
-
 /* ============================================================
    loading.tsx — app/admin/complaints/[id]/loading.tsx
    ------------------------------------------------------------
-   Course requirement: "loading" files. Next.js shows this
-   automatically while the dynamic complaint detail page is
-   being prepared. (React Suspense via the App Router.)
+   Course requirement: "loading" files on a DYNAMIC route.
+   Next.js shows this while the complaint detail page is being
+   prepared (Suspense boundary — zero configuration).
    ============================================================ */
 
-export default function ComplaintDetailLoading() {
+export default function ComplaintLoading() {
   return (
-    <div className="space-y-6">
-      <div className="h-4 w-56 animate-pulse rounded bg-base-300" />
-      <AdminStatSkeleton count={0} />
-      <div className="card border border-base-300 bg-white shadow-sm">
-        <div className="card-body space-y-3">
-          <div className="h-5 w-40 animate-pulse rounded bg-base-300" />
-          <div className="h-4 w-full animate-pulse rounded bg-base-300" />
-          <div className="h-4 w-5/6 animate-pulse rounded bg-base-300" />
-          <div className="h-4 w-2/3 animate-pulse rounded bg-base-300" />
-        </div>
+    <div className="space-y-4">
+      <div className="h-10 w-72 animate-pulse rounded-lg bg-gray-200" />
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <div className="h-56 animate-pulse rounded-xl bg-gray-100" />
+        <div className="h-56 animate-pulse rounded-xl bg-gray-100" />
       </div>
     </div>
   );

@@ -1,112 +1,70 @@
 "use client";
 
-/* ============================================================
-   ADMIN ANNOUNCEMENT TOAST — components/admin/AdminAnnouncementToast.tsx
-   ------------------------------------------------------------
-   COURSE CONCEPTS DEMONSTRATED IN THIS FILE:
-
-   1. PUSHERJS REAL-TIME NOTIFICATIONS (bonus feature)
-      This client component subscribes to the "announcements"
-      Pusher channel. Whenever the admin publishes an
-      announcement (server-side trigger in
-      announcement.service.ts), every connected browser
-      receives the event over the WebSocket instantly and a
-      DaisyUI toast appears — no page refresh, no polling.
-      Unsubscribes cleanly on unmount (useEffect cleanup).
-
-   2. REACT HOOKS
-      - useState  -> the list of live toast messages
-      - useEffect -> subscribe on mount, unsubscribe on unmount
-        (the [] dependency array = run once).
-
-   3. DAISYUI — toast + alert + btn components.
-
-   Place <AdminAnnouncementToast /> once inside any role's
-   layout to enable real-time announcement popups there.
-   ============================================================ */
-
 import { useEffect, useState } from "react";
-import {
-  getPusherClient,
-  ANNOUNCEMENT_CHANNEL,
-  NEW_ANNOUNCEMENT_EVENT,
-} from "@/lib/pusher";
+import { getPusherClient } from "@/lib/pusher";
 
-type AnnouncementEvent = {
-  id: number;
-  title: string;
-  body: string;
-  created_by: string;
-};
+type Toast = { id: string; title: string; body: string;};
 
-type ToastItem = AnnouncementEvent & { toastId: number };
 
 export default function AdminAnnouncementToast() {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
-  /* useEffect: subscribe to the Pusher channel once on mount.
-     The returned cleanup function unsubscribes when the
-     component unmounts (React hooks lifecycle rule). */
   useEffect(() => {
     const pusher = getPusherClient();
-
-    // Pusher not configured -> render nothing (feature disabled).
     if (!pusher) return;
 
-    const channel = pusher.subscribe(ANNOUNCEMENT_CHANNEL);
+    const channel = pusher.subscribe("announcements");
 
-    const handler = (data: unknown) => {
-      const payload = data as AnnouncementEvent;
+    const onNewAnnouncement = (data: { title?: string; body?: string }) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const toast: Toast = {
+        id,
+        title: data?.title ?? "New announcement",
+        body: data?.body ?? "",
+      };
+      setToasts((prev) => [...prev, toast]);
 
-      // Unique id for this toast instance (used to dismiss it later).
-      const toastId = Date.now();
-
-      // Add a new toast.
-      setToasts((previous) => [...previous, { ...payload, toastId }]);
-
-      // Auto-dismiss this toast after 6 seconds.
       setTimeout(() => {
-        setToasts((previous) =>
-          previous.filter((toast) => toast.toastId !== toastId),
-        );
+        setToasts((prev) => prev.filter((t) => t.id !== id));
       }, 6000);
     };
 
-    channel.bind(NEW_ANNOUNCEMENT_EVENT, handler);
+    channel.bind("new-announcement", onNewAnnouncement);
 
-    // Cleanup: unbind + unsubscribe on unmount.
     return () => {
-      channel.unbind(NEW_ANNOUNCEMENT_EVENT, handler);
-      pusher.unsubscribe(ANNOUNCEMENT_CHANNEL);
+      channel.unbind("new-announcement", onNewAnnouncement);
+      pusher.unsubscribe("announcements");
     };
   }, []);
+
+  const dismiss = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
 
   if (toasts.length === 0) return null;
 
   return (
-    <div className="toast toast-end z-[100]">
+    <div className="pointer-events-none fixed right-5 top-20 z-[100] flex w-96 flex-col gap-3">
       {toasts.map((toast) => (
         <div
-          key={toast.toastId}
-          className="alert border-l-4 border-l-dwellix-500 bg-white shadow-lg"
+          key={toast.id}
+          className="pointer-events-auto rounded-xl border border-gray-200 bg-white p-4 shadow-2xl"
         >
-          <div>
-            <p className="text-xs uppercase tracking-wide text-gray-400">
-              New announcement · {toast.created_by}
-            </p>
-            <p className="text-sm font-bold">{toast.title}</p>
-            <p className="line-clamp-2 text-xs text-gray-500">{toast.body}</p>
+          <div className="flex items-start gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-dwellix-500 text-white">
+              ✦
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-gray-900">{toast.title}</p>
+              <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-gray-600">{toast.body}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => dismiss(toast.id)}
+              className="grid h-6 w-6 place-items-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
           </div>
-          <button
-            className="btn btn-ghost btn-xs"
-            onClick={() =>
-              setToasts((previous) =>
-                previous.filter((item) => item.toastId !== toast.toastId),
-              )
-            }
-          >
-            ✕
-          </button>
         </div>
       ))}
     </div>

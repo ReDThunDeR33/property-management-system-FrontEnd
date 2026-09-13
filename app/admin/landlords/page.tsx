@@ -1,51 +1,30 @@
+import { fetchPeopleList, landlordSchema } from "@/lib/adminPeople";
 import AdminLandlordManager from "@/components/admin/AdminLandlordManager";
-import { getAdminSession } from "@/lib/adminAuth";
-import { getAdminList, peopleListSchema } from "@/lib/adminPeople";
 
 /* ============================================================
-   ADMIN LANDLORDS PAGE — app/admin/landlords/page.tsx
+   LANDLORDS PAGE — app/admin/landlords/page.tsx  (SSR)
    ------------------------------------------------------------
-   COURSE CONCEPTS DEMONSTRATED IN THIS FILE:
+   Course concepts demonstrated here:
 
-   1. SSR + CSR HYBRID — course table:
-      "Personalized dashboard -> SSR or SSR + CSR".
-      The PAGE is a Server Component (SSR): it reads the admin's
-      JWT cookie and fetches the live landlord list with Axios +
-      Zod BEFORE sending HTML. The interactive part (Add / Edit /
-      Delete) lives in the client component below, which
-      receives the data via PROPS and runs in the browser (CSR).
+   1. SSR — async Server Component: on every request the server
+      reads the admin's cookie JWT, calls
+      GET /admin/landlord/alllandlord with Axios, validates the
+      response with the landlordSchema (Zod) and renders the
+      complete HTML. (Course table: authenticated page → SSR.)
 
-   2. AXIOS + ZOD — server-side data layer (lib/adminPeople.ts)
-      with the NEXT_PUBLIC_API_URL convention from .env.local.
+   2. SSR + CSR combination — the page does the server fetch,
+      then hands the data to AdminLandlordManager (a client
+      component) via PROPS for the interactive Add/Edit/Delete
+      operations. (Course table: "Personalized dashboard →
+      SSR + CSR".)
 
-   3. FOLDER-BASED ROUTING — app/admin/landlords/page.tsx =
-      route /admin/landlords.
+   3. Folder-based routing — /admin/landlords.
    ============================================================ */
 
-export default async function AdminLandlordsPage() {
-  // 1. AUTH: read the admin session from cookies (SSR).
-  const session = await getAdminSession();
+export default async function LandlordsPage() {
+  // Server-side fetch + Zod validation (fail-soft: [] on error)
+  const landlords = await fetchPeopleList("landlord/alllandlord", landlordSchema);
 
-  if (!session) {
-    return (
-      <div className="card mx-auto max-w-md border border-base-300 bg-white shadow-sm">
-        <div className="card-body items-center text-center">
-          <h2 className="card-title">Session required</h2>
-          <p className="text-sm text-gray-500">
-            Please log in as an admin again.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // 2. SSR FETCH: live landlord list (Axios + Zod, server-side).
-  const landlords = await getAdminList(
-    "/admin/landlord/alllandlord",
-    session.token,
-    peopleListSchema,
-  );
-
-  // 3. Pass validated data DOWN to the client manager (props).
-  return <AdminLandlordManager initialLandlords={landlords} />;
+  // Data flows DOWN into the client manager via props
+  return <AdminLandlordManager landlords={landlords} />;
 }

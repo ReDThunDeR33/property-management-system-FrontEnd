@@ -6,37 +6,35 @@ import AdminAnnouncementToast from "@/components/admin/AdminAnnouncementToast";
 import { getAdminSession } from "@/lib/adminAuth";
 
 /* ============================================================
-   ADMIN LAYOUT — app/admin/layout.tsx
+   ADMIN LAYOUT — app/admin/layout.tsx  (pure Tailwind shell)
    ------------------------------------------------------------
    Course concepts demonstrated here:
 
    1. FOLDER-BASED ROUTING / LAYOUTS
       Every file inside app/admin/ automatically gets this shell
       (sidebar + topbar). Next.js applies the closest layout.tsx
-      to all nested routes — this is the course's "layout" idea.
+      to all nested routes — the course's "layout" idea.
 
-   2. AUTHENTICATION + AUTHORIZATION (Course: week 14)
-      The login page stores the JWT in a cookie after
-      POST /auth/login (Axios). Here on the server we read that
-      cookie (getAdminSession helper) and:
+   2. AUTHENTICATION + AUTHORIZATION
+      The login page stores the JWT in browser COOKIES after
+      POST /auth/login (Axios). Here on the server we read those
+      cookies (getAdminSession helper — next/headers cookies()):
         • not logged in  → redirect to /login (authentication)
         • logged in but NOT an admin → redirect to /login
           (authorization: this area is admin-only)
       Reading cookies() also forces DYNAMIC per-request rendering,
-      which is correct for an authenticated area (course table:
+      correct for an authenticated area (course table:
       "Authenticated account page → SSR").
 
-   3. COMPONENT COMPOSITION
-      AdminSidebar and AdminTopbar are separate reusable
-      components; the admin's data flows into the topbar via
-      PROPS.
+   3. COMPONENT COMPOSITION + PROPS
+      AdminSidebar and AdminTopbar are reusable components; the
+      admin's session data flows into the topbar via PROPS.
+
+   4. PURE TAILWIND — no DaisyUI: the shell, cards, menus and
+      buttons are plain Tailwind utility classes (lib/adminUi).
    ============================================================ */
 
-export default async function AdminLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export default async function AdminLayout({ children }: { children: ReactNode }) {
   // Server-side session check (authentication + role authorization).
   const session = await getAdminSession();
 
@@ -46,8 +44,8 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-base-200">
-      {/* Left: dark admin sidebar (DaisyUI menu) */}
+    <div className="flex min-h-screen bg-[#f6f5f2]">
+      {/* Left: dark admin sidebar (pure Tailwind menu) */}
       <AdminSidebar />
 
       {/* Right: topbar + the actual page */}

@@ -1,70 +1,72 @@
 "use client";
 
 /* ============================================================
-   ADMIN TENANT MANAGER — components/admin/AdminTenantManager.tsx
+   ADMIN TENANT MANAGER (client component) — pure Tailwind
    ------------------------------------------------------------
-   Same course concepts as AdminLandlordManager (SSR + CSR
-   hybrid, useState, Zod schemas mirroring the backend DTOs,
-   axios + NEXT_PUBLIC_API_URL, DaisyUI modal).
-
-   Tenant-specific (CreateTenantDto):
-   name, email, phone, password (min 4), nid_number,
-   nid_document_url, has_vehicle (boolean checkbox).
-   UpdateTenantDto has no password.
+   Full CRUD for tenants. Mirrors CreateTenantDto (name, email,
+   phone, password, nid_number, nid_document_url, has_vehicle)
+   and UpdateTenantDto (no password). Zod url() check on the
+   NID document link. Tenants are created PENDING — the
+   landlord approves them later (as per the workflow).
    ============================================================ */
 
 import { useState } from "react";
 import axios from "axios";
 import { z } from "zod";
+import type { Tenant } from "@/lib/adminPeople";
 import { authHeader } from "@/lib/getToken";
-import AdminPeopleTable, { type AdminPeopleRow } from "./AdminPeopleTable";
+import {
+  AdminPageHeader,
+  AdminAlert,
+  AdminModal,
+  AdminBadge,
+  Field,
+  btnPrimary,
+  btnSecondary,
+  btnDanger,
+  btnGhost,
+  inputClass,
+} from "@/lib/adminUi";
+import AdminPeopleTable from "./AdminPeopleTable";
 
-type Tenant = {
-  id: number;
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+
+/* ---------- Zod schemas (mirror the backend DTOs) ---------- */
+const createTenantSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  email: z.string().trim().email("Enter a valid email"),
+  phone: z.string().trim().min(1, "Phone is required"),
+  password: z.string().min(4, "Password must be at least 4 characters"),
+  nid_number: z.string().trim().min(1, "NID number is required"),
+  nid_document_url: z.string().trim().url("Enter a valid document URL (https://…)"),
+  has_vehicle: z.boolean(),
+});
+
+const updateTenantSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  email: z.string().trim().email("Enter a valid email"),
+  phone: z.string().trim().min(1, "Phone is required"),
+  nid_number: z.string().trim().min(1, "NID number is required"),
+  // Optional on update (list endpoint doesn't return the URL)
+  nid_document_url: z
+    .string()
+    .trim()
+    .url("Enter a valid document URL (https://…)")
+    .or(z.literal(""))
+    .transform((v) => (v === "" ? undefined : v)),
+});
+
+type FormState = {
   name: string;
   email: string;
   phone: string;
+  password: string;
   nid_number: string;
+  nid_document_url: string;
   has_vehicle: boolean;
-  status: string;
-  created_at: string;
-  property: { id: number; unit_number: string } | null;
-  approved_by: { id: number; name: string } | null;
 };
 
-/* Zod schemas mirroring CreateTenantDto / UpdateTenantDto. */
-const createSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  email: z.string().min(1, "Email is required").email("Enter a valid email"),
-  phone: z.string().min(1, "Phone is required"),
-  password: z.string().min(4, "Password must be at least 4 characters"),
-  nid_number: z.string().min(1, "NID number is required"),
-  nid_document_url: z
-    .string()
-    .min(1, "NID document URL is required")
-    .url("Enter a valid URL (https://...)"),
-  has_vehicle: z.boolean(),
-});
-
-/* Update schema: nid_document_url is OPTIONAL (matches
-   UpdateTenantDto). The list endpoint does not return the URL,
-   so on edit the field starts empty — if left empty it is
-   simply omitted from the PATCH payload ("" -> removed). */
-const updateSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  email: z.string().min(1, "Email is required").email("Enter a valid email"),
-  phone: z.string().min(1, "Phone is required"),
-  nid_number: z.string().min(1, "NID number is required"),
-  nid_document_url: z
-    .union([z.literal(""), z.string().url("Enter a valid URL (https://...)")])
-    .optional(),
-  has_vehicle: z.boolean(),
-});
-
-type CreateForm = z.infer<typeof createSchema>;
-type FieldErrors = Partial<Record<keyof CreateForm, string>>;
-
-const EMPTY_CREATE: CreateForm = {
+const EMPTY: FormState = {
   name: "",
   email: "",
   phone: "",
@@ -74,363 +76,254 @@ const EMPTY_CREATE: CreateForm = {
   has_vehicle: false,
 };
 
-export default function AdminTenantManager({
-  initialTenants,
-}: {
-  initialTenants: Tenant[];
-}) {
-  const [tenants, setTenants] = useState<Tenant[]>(initialTenants);
-  const [banner, setBanner] = useState("");
-
+export default function AdminTenantManager({ tenants }: { tenants: Tenant[] }) {
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState<CreateForm>(EMPTY_CREATE);
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [editing, setEditing] = useState<Tenant | null>(null);
+  const [deleting, setDeleting] = useState<Tenant | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY);
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
+  const [banner, setBanner] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
-  // Controlled text inputs.
-  function handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
-  }
-
-  // Separate handler for the has_vehicle checkbox (boolean).
-  function handleVehicleChange(event: React.ChangeEvent<HTMLInputElement>) {
-    setForm((previous) => ({ ...previous, has_vehicle: event.target.checked }));
-  }
-
-  function openCreateModal() {
-    setEditingId(null);
-    setForm(EMPTY_CREATE);
-    setFieldErrors({});
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY);
+    setErrors({});
     setModalOpen(true);
-  }
+  };
 
-  function openEditModal(tenant: Tenant) {
-    setEditingId(tenant.id);
+  const openEdit = (tenant: Tenant) => {
+    setEditing(tenant);
     setForm({
       name: tenant.name,
       email: tenant.email,
       phone: tenant.phone,
       password: "",
       nid_number: tenant.nid_number,
-      nid_document_url: "",
+      nid_document_url: "", // not returned by the list endpoint
       has_vehicle: tenant.has_vehicle,
     });
-    setFieldErrors({});
+    setErrors({});
     setModalOpen(true);
-  }
+  };
 
-  function closeModal() {
-    setModalOpen(false);
-    setEditingId(null);
-    setFieldErrors({});
-  }
+  /* ---------- Zod validate + Axios POST/PATCH ---------- */
+  const handleSubmit = async () => {
+    setBanner(null);
 
-  async function refresh() {
-    const response = await axios.get(
-      process.env.NEXT_PUBLIC_API_URL + "/admin/tenant/alltenants",
-      { headers: authHeader() },
-    );
-    setTenants(response.data);
-  }
+    const payload = editing
+      ? {
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          nid_number: form.nid_number,
+          nid_document_url: form.nid_document_url,
+        }
+      : form;
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBanner("");
-
-    const schema = editingId === null ? createSchema : updateSchema;
-    const result = schema.safeParse(form);
-
+    const schema = editing ? updateTenantSchema : createTenantSchema;
+    const result = schema.safeParse(payload);
     if (!result.success) {
-      const newErrors: FieldErrors = {};
-      result.error.issues.forEach((issue) => {
-        const field = issue.path[0] as keyof CreateForm;
-        if (field && !newErrors[field]) newErrors[field] = issue.message;
-      });
-      setFieldErrors(newErrors);
+      const fieldErrors: Partial<Record<keyof FormState, string>> = {};
+      for (const issue of result.error.issues) {
+        const key = issue.path[0] as keyof FormState;
+        if (!fieldErrors[key]) fieldErrors[key] = issue.message;
+      }
+      setErrors(fieldErrors);
       return;
     }
 
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-      setFieldErrors({});
-
-      if (editingId === null) {
-        await axios.post(
-          process.env.NEXT_PUBLIC_API_URL + "/admin/tenant/create",
-          result.data,
-          { headers: authHeader() },
-        );
-        setBanner("Tenant created successfully (status: PENDING until a landlord approves).");
+      if (editing) {
+        await axios.patch(`${API}/admin/tenant/update/${editing.id}`, result.data, {
+          headers: authHeader(),
+        });
+        setBanner({ kind: "success", text: `Tenant #${editing.id} updated — refreshing…` });
       } else {
-        // UPDATE: omit nid_document_url when left empty
-        const payload = { ...result.data };
-        if (!payload.nid_document_url) {
-          delete payload.nid_document_url;
-        }
-        await axios.patch(
-          process.env.NEXT_PUBLIC_API_URL + `/admin/tenant/update/${editingId}`,
-          payload,
-          { headers: authHeader() },
-        );
-        setBanner("Tenant updated successfully.");
+        await axios.post(`${API}/admin/tenant/create`, result.data, { headers: authHeader() });
+        setBanner({ kind: "success", text: "Tenant created (status PENDING) — refreshing…" });
       }
-
-      closeModal();
-      await refresh();
-      setTimeout(() => setBanner(""), 4000);
+      setModalOpen(false);
+      setTimeout(() => window.location.reload(), 700);
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const message = error.response?.data?.message;
-        setBanner(typeof message === "string" ? message : "Could not save the tenant.");
-      } else {
-        setBanner("Something went wrong.");
-      }
-    } finally {
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data?.message ?? "Request failed")
+        : "Unexpected error";
+      setBanner({ kind: "error", text: String(message) });
       setSubmitting(false);
     }
-  }
+  };
 
-  async function handleDelete() {
-    if (!deleteTarget) return;
+  /* ---------- Axios DELETE ---------- */
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-      await axios.delete(
-        process.env.NEXT_PUBLIC_API_URL + `/admin/tenant/delete/${deleteTarget.id}`,
-        { headers: authHeader() },
-      );
-      setBanner("Tenant deleted.");
-      setDeleteTarget(null);
-      await refresh();
-      setTimeout(() => setBanner(""), 4000);
-    } catch {
-      setBanner("Could not delete the tenant.");
-    } finally {
+      await axios.delete(`${API}/admin/tenant/delete/${deleting.id}`, { headers: authHeader() });
+      setBanner({ kind: "success", text: `Tenant #${deleting.id} deleted — refreshing…` });
+      setDeleting(null);
+      setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data?.message ?? "Delete failed")
+        : "Unexpected error";
+      setBanner({ kind: "error", text: String(message) });
       setSubmitting(false);
     }
-  }
-
-  const rows: AdminPeopleRow[] = tenants.map((tenant) => ({
-    id: tenant.id,
-    name: tenant.name,
-    email: tenant.email,
-    meta: `NID ${tenant.nid_number}`,
-    status: tenant.status,
-    footer: tenant.property
-      ? `Unit ${tenant.property.unit_number} · vehicle: ${tenant.has_vehicle ? "yes" : "no"}`
-      : `No property yet · vehicle: ${tenant.has_vehicle ? "yes" : "no"}`,
-    detailHref: `/admin/tenants/${tenant.id}`,
-  }));
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Tenant Management</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Manage tenant accounts and property occupancy. {tenants.length} total.
-          </p>
-        </div>
-        <button className="btn btn-primary btn-sm" onClick={openCreateModal}>
-          + Add Tenant
-        </button>
-      </div>
+      <AdminPageHeader
+        title="Tenants"
+        subtitle="Residents created by the admin — landlords approve them afterwards."
+        action={
+          <button type="button" onClick={openCreate} className={btnPrimary}>
+            + Add Tenant
+          </button>
+        }
+      />
 
-      {banner && (
-        <div className="alert border-base-300 bg-white shadow-sm">
-          <span className="text-sm text-success">{banner}</span>
-        </div>
-      )}
+      {banner && <AdminAlert kind={banner.kind}>{banner.text}</AdminAlert>}
 
       <AdminPeopleTable
-        metaLabel="NID"
-        rows={rows}
-        emptyMessage="No tenants created yet."
-        onEdit={(row) => {
-          const tenant = tenants.find((item) => item.id === row.id);
-          if (tenant) openEditModal(tenant);
-        }}
-        onDelete={(row) => {
-          const tenant = tenants.find((item) => item.id === row.id);
-          if (tenant) setDeleteTarget(tenant);
+        columns={["#", "Name", "Email", "Phone", "NID Number", "Vehicle", "Status", "Property"]}
+        rows={tenants}
+        getRowKey={(row) => (row as Tenant).id}
+        onEdit={openEdit}
+        onDelete={(row) => setDeleting(row as Tenant)}
+        emptyMessage="No tenants yet."
+        renderRow={(row) => {
+          const tenant = row as Tenant;
+          return (
+            <>
+              <td className="px-4 py-3 text-sm font-mono text-xs text-gray-500">#{tenant.id}</td>
+              <td className="px-4 py-3 text-sm font-semibold text-gray-900">{tenant.name}</td>
+              <td className="px-4 py-3 text-sm text-gray-700">{tenant.email}</td>
+              <td className="px-4 py-3 text-sm text-gray-700">{tenant.phone}</td>
+              <td className="px-4 py-3 text-sm text-gray-700">{tenant.nid_number}</td>
+              <td className="px-4 py-3 text-sm text-gray-700">{tenant.has_vehicle ? "Yes" : "No"}</td>
+              <td className="px-4 py-3">
+                <AdminBadge status={tenant.status ?? "PENDING"} />
+              </td>
+              <td className="px-4 py-3 text-sm text-gray-700">
+                {tenant.property ? `Unit ${tenant.property.unit_number ?? tenant.property.id}` : "—"}
+              </td>
+            </>
+          );
         }}
       />
 
-      {/* Add/Edit modal (Zod-validated) */}
-      {modalOpen && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-lg">
-            <h3 className="text-lg font-bold">
-              {editingId === null ? "Add Tenant" : "Edit Tenant"}
-            </h3>
-
-            <form onSubmit={handleSubmit} noValidate className="mt-4 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-600">
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={form.name}
-                    onChange={handleInputChange}
-                    className="input input-bordered w-full"
-                    disabled={submitting}
-                  />
-                  {fieldErrors.name && (
-                    <p className="mt-1 text-xs text-error">{fieldErrors.name}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-600">
-                    Phone
-                  </label>
-                  <input
-                    type="text"
-                    name="phone"
-                    value={form.phone}
-                    onChange={handleInputChange}
-                    className="input input-bordered w-full"
-                    disabled={submitting}
-                  />
-                  {fieldErrors.phone && (
-                    <p className="mt-1 text-xs text-error">{fieldErrors.phone}</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-600">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  value={form.email}
-                  onChange={handleInputChange}
-                  className="input input-bordered w-full"
-                  disabled={submitting}
-                />
-                {fieldErrors.email && (
-                  <p className="mt-1 text-xs text-error">{fieldErrors.email}</p>
-                )}
-              </div>
-
-              {editingId === null && (
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-600">
-                    Password (min 4 characters)
-                  </label>
-                  <input
-                    type="password"
-                    name="password"
-                    value={form.password}
-                    onChange={handleInputChange}
-                    className="input input-bordered w-full"
-                    disabled={submitting}
-                  />
-                  {fieldErrors.password && (
-                    <p className="mt-1 text-xs text-error">{fieldErrors.password}</p>
-                  )}
-                </div>
-              )}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-600">
-                    NID number
-                  </label>
-                  <input
-                    type="text"
-                    name="nid_number"
-                    value={form.nid_number}
-                    onChange={handleInputChange}
-                    className="input input-bordered w-full"
-                    disabled={submitting}
-                  />
-                  {fieldErrors.nid_number && (
-                    <p className="mt-1 text-xs text-error">{fieldErrors.nid_number}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-600">
-                    NID document URL
-                  </label>
-                  <input
-                    type="url"
-                    name="nid_document_url"
-                    value={form.nid_document_url}
-                    onChange={handleInputChange}
-                    placeholder="https://example.com/nid.pdf"
-                    className="input input-bordered w-full"
-                    disabled={submitting}
-                  />
-                  {fieldErrors.nid_document_url && (
-                    <p className="mt-1 text-xs text-error">{fieldErrors.nid_document_url}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Boolean checkbox (has_vehicle) */}
-              <label className="label cursor-pointer justify-start gap-2">
-                <input
-                  type="checkbox"
-                  className="checkbox checkbox-sm checkbox-primary"
-                  checked={form.has_vehicle}
-                  onChange={handleVehicleChange}
-                  disabled={submitting}
-                />
-                <span className="text-xs font-semibold text-gray-600">
-                  Has a vehicle
-                </span>
-              </label>
-
-              <div className="modal-action">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={closeModal}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary btn-sm" disabled={submitting}>
-                  {submitting ? "Saving..." : editingId === null ? "Create" : "Save changes"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete confirmation modal */}
-      {deleteTarget && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-sm">
-            <h3 className="text-lg font-bold">Delete tenant?</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              &quot;{deleteTarget.name}&quot; will be removed permanently.
-            </p>
-            <div className="modal-action">
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setDeleteTarget(null)}
+      {/* Create / Edit modal */}
+      <AdminModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? `Edit Tenant #${editing.id}` : "Add Tenant"}
+      >
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }}
+          className="space-y-4"
+        >
+          <Field label="Name" error={errors.name}>
+            <input
+              className={inputClass}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+          <Field label="Email" error={errors.email}>
+            <input
+              type="email"
+              className={inputClass}
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+          <Field label="Phone" error={errors.phone}>
+            <input
+              className={inputClass}
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+          {!editing && (
+            <Field label="Password" error={errors.password}>
+              <input
+                type="password"
+                className={inputClass}
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
                 disabled={submitting}
-              >
-                Cancel
-              </button>
-              <button className="btn btn-error btn-sm" onClick={handleDelete} disabled={submitting}>
-                {submitting ? "Deleting..." : "Delete"}
-              </button>
-            </div>
+              />
+            </Field>
+          )}
+          <Field label="NID Number" error={errors.nid_number}>
+            <input
+              className={inputClass}
+              value={form.nid_number}
+              onChange={(e) => setForm({ ...form, nid_number: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+          <Field
+            label={editing ? "NID Document URL (leave empty to keep current)" : "NID Document URL"}
+            error={errors.nid_document_url}
+          >
+            <input
+              className={inputClass}
+              placeholder="https://example.com/nid.pdf"
+              value={form.nid_document_url}
+              onChange={(e) => setForm({ ...form, nid_document_url: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+
+          {/* Checkbox — has_vehicle (CreateTenantDto requires boolean) */}
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-gray-300 text-dwellix-600 focus:ring-dwellix-500"
+              checked={form.has_vehicle}
+              onChange={(e) => setForm({ ...form, has_vehicle: e.target.checked })}
+              disabled={submitting || editing !== null}
+            />
+            Has vehicle
+            {editing && <span className="text-xs text-gray-400">(not editable after create)</span>}
+          </label>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setModalOpen(false)} className={btnSecondary}>
+              Cancel
+            </button>
+            <button type="submit" disabled={submitting} className={btnPrimary}>
+              {submitting ? "Saving…" : editing ? "Save Changes" : "Create Tenant"}
+            </button>
           </div>
+        </form>
+      </AdminModal>
+
+      {/* Delete confirmation */}
+      <AdminModal open={deleting !== null} onClose={() => setDeleting(null)} title="Delete Tenant">
+        <p className="text-sm text-gray-600">
+          Delete <strong>{deleting?.name}</strong> permanently? This cannot be undone.
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={() => setDeleting(null)} className={btnSecondary}>
+            Cancel
+          </button>
+          <button type="button" onClick={handleDelete} disabled={submitting} className={btnDanger}>
+            {submitting ? "Deleting…" : "Delete"}
+          </button>
         </div>
-      )}
+      </AdminModal>
     </div>
   );
 }

@@ -1,44 +1,44 @@
-import AdminPageHeader from "@/components/admin/AdminPageHeader";
-import AdminCard from "@/components/admin/AdminCard";
-import Link from "next/link";
-import { getAdminSession } from "@/lib/adminAuth";
+import { cookies } from "next/headers";
 import axios from "axios";
 import { z } from "zod";
+import Link from "next/link";
+import { getAdminSession, authHeader } from "@/lib/adminAuth";
+import { AdminCard, AdminAlert, AdminBadge, AdminPageHeader } from "@/lib/adminUi";
 
 /* ============================================================
-   ADMIN DASHBOARD — app/admin/page.tsx
+   ADMIN DASHBOARD — app/admin/page.tsx  (pure Tailwind, SSR)
    ------------------------------------------------------------
    COURSE CONCEPTS DEMONSTRATED IN THIS FILE:
 
-   1. SERVER-SIDE RENDERING (SSR) — course table:
-      "Personalized dashboard -> SSR (or SSR + CSR)" and
-      "Authenticated account page -> SSR".
-      This is an ASYNC SERVER COMPONENT: Next.js renders it on
-      the server for every request. It reads the request cookies
-      (JWT + user) and fetches fresh counts from the backend
-      right here on the server, so the browser receives fully
-      populated HTML - no client-side loading spinner needed.
+   1. SSR (SERVER-SIDE RENDERING) — course table:
+      "Personalized dashboard → SSR" + "Authenticated account
+      page → SSR". This is an async Server Component: on EVERY
+      request the server reads the admin's cookies, calls the
+      backend with Axios (server-side), validates responses with
+      Zod, computes the stats and only then sends the complete
+      HTML to the browser.
 
-   2. AUTHENTICATION (course: week 14)
-      The JWT cookie stored by /login is read server-side
-      (getAdminSession helper) and forwarded to the backend as
-      "Authorization: Bearer <token>".
+   2. AUTHENTICATION — the JWT is read from the cookie set by
+      the login page (cookies() from next/headers) and forwarded
+      as `Authorization: Bearer <token>` on every Axios call.
 
-   3. AXIOS (course: Axios.pptx) - axios is imported directly
-      and the backend URL comes from the NEXT_PUBLIC_API_URL
-      environment variable defined in .env.local (the course
-      convention: axios.get(process.env.NEXT_PUBLIC_API_URL + ...)).
-      fetch() is never used anywhere in this project.
+   3. AXIOS ONLY — all backend communication goes through
+      axios with the NEXT_PUBLIC_API_URL env var (course
+      convention). `fetch` is never used.
 
-   4. ZOD - every backend response is validated with a Zod
-      schema (schema -> z.infer type -> safeParse) before use,
-      the course's Zod pattern applied to API responses.
+   4. ZOD VALIDATION — every API response is checked against a
+      Zod schema (safeParse) before it is used; unexpected
+      shapes fail soft instead of crashing the page.
 
-   5. FOLDER-BASED ROUTING - app/admin/page.tsx = route /admin.
+   5. FAIL-SOFT RENDERING — if the backend is down, the page
+      still renders with zeros and an info banner.
    ============================================================ */
 
-// ---- Zod schemas for the backend responses (server-side) ----
-const adminRefSchema = z.object({
+// Base URL from the course-standard env variable (.env.local)
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+
+/* ---------- Zod schemas (validate backend responses) ---------- */
+const idNameSchema = z.object({
   id: z.number(),
   name: z.string(),
 });
@@ -46,273 +46,208 @@ const adminRefSchema = z.object({
 const announcementSchema = z.object({
   id: z.number(),
   title: z.string(),
-  body: z.string(),
   created_at: z.string(),
-  created_by: adminRefSchema.nullable(),
+  created_by: idNameSchema.nullish(),
 });
 
 const complaintSchema = z.object({
   id: z.number(),
-  filed_by_type: z.string(),
-  filed_by_id: z.number(),
-  against_type: z.string(),
-  against_id: z.number().nullable(),
-  description: z.string(),
+  title: z.string(),
   status: z.string(),
-  admin_note: z.string().nullable(),
-  reviewed_by: adminRefSchema.nullable(),
-  created_at: z.string(),
 });
 
 const personSchema = z.object({
   id: z.number(),
   name: z.string(),
-  email: z.string(),
-  status: z.string(),
+  status: z.string().nullish(),
 });
 
-const propertySchema = z.object({
-  id: z.number(),
-  unit_number: z.string(),
-  status: z.string(),
-});
+const propertySchema = z.object({ id: z.number() });
+const blockSchema = z.object({ id: z.number() });
+const buildingSchema = z.object({ id: z.number() });
 
-const blockSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-});
-
-const buildingSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-});
-
-// The admin list endpoints return bare JSON arrays.
-const announcementsSchema = z.array(announcementSchema);
-const complaintsSchema = z.array(complaintSchema);
-const landlordsSchema = z.array(personSchema);
-const tenantsSchema = z.array(personSchema);
-const staffSchema = z.array(personSchema);
-const propertiesSchema = z.array(propertySchema);
-const blocksSchema = z.array(blockSchema);
-const buildingsSchema = z.array(buildingSchema);
-
-// Small helper: GET with the admin's JWT, then Zod-validate.
-// (Server-side Axios + Zod - the SSR data-fetching pattern.)
-// The base URL comes from .env.local -> NEXT_PUBLIC_API_URL.
-async function fetchValidated<T>(
-  url: string,
+/* ---------- Fail-soft fetch helper (SSR + Axios + Zod) ---------- */
+async function fetchList<T>(
+  path: string,
   token: string,
   schema: z.ZodType<T>,
-): Promise<T | null> {
+): Promise<{ data: T[]; ok: boolean }> {
   try {
-    const response = await axios.get(process.env.NEXT_PUBLIC_API_URL + url, {
-      headers: { Authorization: `Bearer ${token}` },
+    const response = await axios.get(`${API}/admin/${path}`, {
+      headers: authHeader(token),
+      timeout: 8000,
     });
-
-    const parsed = schema.safeParse(response.data);
-    if (!parsed.success) {
-      console.error(`Zod validation failed for ${url}`);
-      return null;
-    }
-    return parsed.data;
-  } catch (error) {
-    // Backend down / unexpected response -> render with zeros
-    // instead of crashing the whole dashboard (fail-soft).
-    console.error(`Axios request failed for ${url}`);
-    return null;
+    const parsed = z.array(schema).safeParse(response.data);
+    if (!parsed.success) return { data: [], ok: false };
+    return { data: parsed.data, ok: true };
+  } catch {
+    // Backend down / unauthorized → render with empty data.
+    return { data: [], ok: false };
   }
 }
 
-export default async function AdminDashboardPage() {
-  // 1. AUTH: read the admin session (JWT + user) from cookies.
+export default async function AdminDashboard() {
+  // 1) Session from cookies (authentication + role check)
   const session = await getAdminSession();
 
-  // The /admin layout already redirects non-admins; this is
-  // simple defense in depth for the page itself.
-  if (!session) {
-    return (
-      <div className="card mx-auto max-w-md border border-base-300 bg-white shadow-sm">
-        <div className="card-body items-center text-center">
-          <h2 className="card-title">Session required</h2>
-          <p className="text-sm text-gray-500">
-            Please log in as an admin again.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const { token } = session;
-
-  // 2. SSR DATA FETCH: live backend calls (Axios, server-side).
+  // 2) Parallel SSR data fetching — 8 endpoints at once
+  const token = session?.token ?? "";
   const [announcements, complaints, landlords, tenants, staff, properties, blocks, buildings] =
     await Promise.all([
-      fetchValidated("/admin/announcement/allannouncements", token, announcementsSchema),
-      fetchValidated("/admin/complaint/allcomplaints", token, complaintsSchema),
-      fetchValidated("/admin/landlord/alllandlord", token, landlordsSchema),
-      fetchValidated("/admin/tenant/alltenants", token, tenantsSchema),
-      fetchValidated("/admin/staff/allstaff", token, staffSchema),
-      fetchValidated("/admin/property/allproperties", token, propertiesSchema),
-      fetchValidated("/admin/block/allblocks", token, blocksSchema),
-      fetchValidated("/admin/building/allbuildings", token, buildingsSchema),
+      fetchList("announcement/allannouncements", token, announcementSchema),
+      fetchList("complaint/allcomplaints", token, complaintSchema),
+      fetchList("landlord/alllandlord", token, personSchema),
+      fetchList("tenant/alltenants", token, personSchema),
+      fetchList("staff/allstaff", token, personSchema),
+      fetchList("property/allproperties", token, propertySchema),
+      fetchList("block/allblocks", token, blockSchema),
+      fetchList("building/allbuildings", token, buildingSchema),
     ]);
 
-  // 3. DERIVED STATS (computed on the server)
-  const pendingComplaints = complaints
-    ? complaints.filter((c) => c.status === "PENDING").length
-    : 0;
-  const resolvedComplaints = complaints
-    ? complaints.filter(
-        (c) => c.status === "RESOLVED" || c.status === "REJECTED",
-      ).length
-    : 0;
-  const pendingTenants = tenants
-    ? tenants.filter((t) => t.status === "PENDING").length
-    : 0;
+  const backendDown = !announcements.ok && !complaints.ok && !landlords.ok;
 
-  // Latest announcements (backend returns newest first)
-  const latestAnnouncements = announcements ? announcements.slice(0, 3) : [];
+  // 3) Derived stats
+  const openComplaints = complaints.data.filter((c) => c.status !== "RESOLVED").length;
+  const pendingTenants = tenants.data.filter(
+    (t) => (t.status ?? "").toUpperCase() === "PENDING",
+  ).length;
+  const latestAnnouncements = [...announcements.data]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 5);
 
-  // ---- Render ------------------------------------------------
+  const quickLinks = [
+    { href: "/admin/announcements", label: "Announcements", desc: "Publish & manage notices" },
+    { href: "/admin/complaints", label: "Complaints", desc: "Inspect & resolve" },
+    { href: "/admin/landlords", label: "Landlords", desc: "Add & manage owners" },
+    { href: "/admin/tenants", label: "Tenants", desc: "Approvals & records" },
+    { href: "/admin/staff", label: "Staff", desc: "Operations team" },
+    { href: "/admin/properties", label: "Properties", desc: "Units & pricing" },
+  ];
+
   return (
-    <>
+    <div className="space-y-6">
       <AdminPageHeader
-        title="Admin Dashboard"
-        subtitle="Monitor properties, people and operational activity from one place."
+        title={`Welcome back, ${session?.user.name ?? "Admin"}`}
+        subtitle="Live overview of your property operation."
       />
 
-      {/* Stat cards - live data fetched during SSR */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+      {backendDown && (
+        <AdminAlert kind="warning">
+          Backend data unavailable right now — showing zeroed stats. Check that the API server is
+          running.
+        </AdminAlert>
+      )}
+
+      {/* Stat cards (pure Tailwind AdminCard, values via props) */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <AdminCard
           title="Announcements"
-          value={announcements ? announcements.length : 0}
-          hint="Published to all roles"
-          tone="primary"
+          value={announcements.data.length}
+          hint="Published notices"
+          accent
         />
         <AdminCard
           title="Open Complaints"
-          value={pendingComplaints}
-          hint={
-            complaints
-              ? `${resolvedComplaints} closed / ${complaints.length} total`
-              : "Backend data unavailable"
-          }
-          tone="error"
+          value={openComplaints}
+          hint={`${complaints.data.length} total filed`}
         />
         <AdminCard
           title="Pending Tenants"
           value={pendingTenants}
-          hint={tenants ? `${tenants.length} tenants total` : "Backend data unavailable"}
-          tone="warning"
+          hint={`${tenants.data.length} tenants total`}
         />
         <AdminCard
           title="Properties"
-          value={properties ? properties.length : 0}
-          hint={
-            buildings
-              ? `${buildings.length} buildings / ${blocks ? blocks.length : 0} blocks`
-              : "Backend data unavailable"
-          }
-          tone="neutral"
+          value={properties.data.length}
+          hint={`${buildings.data.length} buildings · ${blocks.data.length} blocks`}
         />
+        <AdminCard title="Landlords" value={landlords.data.length} hint="Property owners" />
+        <AdminCard title="Tenants" value={tenants.data.length} hint="Registered residents" />
+        <AdminCard title="Staff" value={staff.data.length} hint="Operations team" />
+        <AdminCard title="Buildings" value={buildings.data.length} hint={`${blocks.data.length} blocks`} />
       </div>
 
-      {/* People counts row */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        <AdminCard
-          title="Landlords"
-          value={landlords ? landlords.length : 0}
-          hint="Managed by admin"
-        />
-        <AdminCard
-          title="Tenants"
-          value={tenants ? tenants.length : 0}
-          hint="Created by admin, approved by landlord"
-        />
-        <AdminCard
-          title="Staff"
-          value={staff ? staff.length : 0}
-          hint="Operational team"
-        />
-      </div>
-
-      {/* Two-column bottom: latest announcements + quick links */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="card border border-base-300 bg-white shadow-sm lg:col-span-2">
-          <div className="card-body">
-            <div className="flex items-center justify-between">
-              <h3 className="card-title text-base">Latest Announcements</h3>
-              <Link
-                href="/admin/announcements"
-                className="text-xs text-dwellix-500 hover:underline"
-              >
-                Manage all
-              </Link>
-            </div>
-
-            <div className="mt-2 divide-y divide-base-300">
-              {latestAnnouncements.length === 0 && (
-                <p className="py-4 text-sm text-gray-500">
-                  No announcements published yet.
-                </p>
-              )}
-              {latestAnnouncements.map((announcement) => (
-                <div key={announcement.id} className="py-3">
-                  <p className="text-sm font-semibold">
-                    {announcement.title}
-                  </p>
-                  <p className="mt-0.5 line-clamp-1 text-xs text-gray-500">
-                    {announcement.body}
-                  </p>
-                  <p className="mt-1 text-[10px] text-gray-400">
-                    by {announcement.created_by?.name ?? "Admin"} ·{" "}
-                    {new Date(announcement.created_at).toLocaleDateString()}
-                  </p>
-                </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Latest announcements */}
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">
+              Latest Announcements
+            </h2>
+            <Link href="/admin/announcements" className="text-xs font-semibold text-dwellix-600 hover:underline">
+              View all →
+            </Link>
+          </div>
+          {latestAnnouncements.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">No announcements yet.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {latestAnnouncements.map((a) => (
+                <li key={a.id} className="flex items-start justify-between gap-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-gray-900">{a.title}</p>
+                    <p className="text-xs text-gray-500">
+                      by {a.created_by?.name ?? "Admin"} ·{" "}
+                      {new Date(a.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-[11px] text-gray-400">#{a.id}</span>
+                </li>
               ))}
-            </div>
-          </div>
-        </div>
+            </ul>
+          )}
+        </section>
 
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="card-body">
-            <h3 className="card-title text-base">Quick Access</h3>
-            <div className="mt-2 grid gap-2">
-              <Link
-                href="/admin/announcements"
-                className="btn btn-sm justify-between border-base-300 bg-base-100 text-gray-700 hover:border-dwellix-500"
-              >
-                Announcements <span>→</span>
-              </Link>
-              <Link
-                href="/admin/complaints"
-                className="btn btn-sm justify-between border-base-300 bg-base-100 text-gray-700 hover:border-dwellix-500"
-              >
-                Complaint Center <span>→</span>
-              </Link>
-              <Link
-                href="/admin/landlords"
-                className="btn btn-sm justify-between border-base-300 bg-base-100 text-gray-700 hover:border-dwellix-500"
-              >
-                Landlords <span>→</span>
-              </Link>
-              <Link
-                href="/admin/tenants"
-                className="btn btn-sm justify-between border-base-300 bg-base-100 text-gray-700 hover:border-dwellix-500"
-              >
-                Tenants <span>→</span>
-              </Link>
-              <Link
-                href="/admin/staff"
-                className="btn btn-sm justify-between border-base-300 bg-base-100 text-gray-700 hover:border-dwellix-500"
-              >
-                Staff <span>→</span>
-              </Link>
-            </div>
+        {/* Complaint queue snapshot */}
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">
+              Complaint Queue
+            </h2>
+            <Link href="/admin/complaints" className="text-xs font-semibold text-dwellix-600 hover:underline">
+              Inspect all →
+            </Link>
           </div>
-        </div>
+          {complaints.data.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">No complaints filed — all clear.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {complaints.data.slice(0, 5).map((c) => (
+                <li key={c.id} className="flex items-center justify-between gap-4 py-3">
+                  <Link
+                    href={`/admin/complaints/${c.id}`}
+                    className="truncate text-sm font-semibold text-gray-900 hover:text-dwellix-600"
+                  >
+                    {c.title}
+                  </Link>
+                  <AdminBadge status={c.status} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
-    </>
+
+      {/* Quick access tiles */}
+      <section>
+        <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-500">
+          Quick Access
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {quickLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="group rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-dwellix-500 hover:shadow-md"
+            >
+              <p className="text-sm font-bold text-gray-900 group-hover:text-dwellix-600">
+                {link.label} →
+              </p>
+              <p className="mt-1 text-xs text-gray-500">{link.desc}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }

@@ -1,83 +1,67 @@
-import AdminPageHeader from "@/components/admin/AdminPageHeader";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getAdminSession } from "@/lib/adminAuth";
-import { getAdminDetail, personSchema } from "@/lib/adminPeople";
+import Link from "next/link";
+import { fetchPeopleDetail, staffSchema } from "@/lib/adminPeople";
+import { AdminBadge } from "@/lib/adminUi";
 
 /* ============================================================
-   STAFF DETAIL — app/admin/staff/[id]/page.tsx
+   STAFF DETAIL — app/admin/staff/[id]/page.tsx  (SSR)
    ------------------------------------------------------------
-   Same concepts as the landlord detail page: dynamic route
-   [id] + dynamic SSR rendering (cookies + per-request fetch),
-   notFound() for invalid ids, Axios + Zod data layer.
+   Dynamic route (await params) + SSR + Zod + notFound().
    ============================================================ */
 
-export default async function StaffDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const session = await getAdminSession();
-  if (!session) {
-    return (
-      <AdminPageHeader
-        title="Staff"
-        subtitle="Please log in as an admin to view this page."
-      />
-    );
-  }
-
-  const staff = await getAdminDetail(
-    `/admin/staff/find/${id}`,
-    session.token,
-    personSchema,
-  );
-
-  if (!staff) {
-    notFound();
+  let member;
+  try {
+    member = await fetchPeopleDetail(`staff/find/${id}`, staffSchema);
+  } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND") notFound();
+    throw error;
   }
 
   return (
     <div className="space-y-6">
-      <Link href="/admin/staff" className="text-sm text-dwellix-500 hover:underline">
-        ← Back to Staff
-      </Link>
-
-      <AdminPageHeader title={staff.name} subtitle={`Staff #${staff.id}`} />
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="card-body">
-            <h3 className="card-title text-base">Contact</h3>
-            <p className="text-sm">
-              <span className="text-gray-400">Email:</span> {staff.email}
-            </p>
-            <p className="text-sm">
-              <span className="text-gray-400">Phone:</span> {staff.phone}
-            </p>
-            <p className="text-sm">
-              <span className="text-gray-400">Status:</span>{" "}
-              <span className="badge badge-sm badge-success">{staff.status}</span>
-            </p>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">{member.name}</h1>
+          <p className="mt-1 text-sm text-gray-500">Staff #{member.id}</p>
         </div>
+        <Link
+          href="/admin/staff"
+          className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 transition hover:border-gray-900"
+        >
+          ← All staff
+        </Link>
+      </div>
 
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="card-body">
-            <h3 className="card-title text-base">Account</h3>
-            <p className="text-sm">
-              <span className="text-gray-400">Created:</span>{" "}
-              {new Date(staff.created_at).toLocaleString()}
-            </p>
-            <p className="text-sm">
-              <span className="text-gray-400">Created by:</span>{" "}
-              {staff.created_by?.name ?? "unknown"} (admin #
-              {staff.created_by?.id ?? "-"})
-            </p>
-          </div>
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Profile</h2>
+          <AdminBadge status={member.status ?? "active"} />
         </div>
+        <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">Email</dt>
+            <dd className="mt-1 text-sm text-gray-800">{member.email}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">Phone</dt>
+            <dd className="mt-1 text-sm text-gray-800">{member.phone}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+              Created By
+            </dt>
+            <dd className="mt-1 text-sm text-gray-800">{member.created_by?.name ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">Joined</dt>
+            <dd className="mt-1 text-sm text-gray-800">
+              {new Date(member.created_at).toLocaleString()}
+            </dd>
+          </div>
+        </dl>
       </div>
     </div>
   );

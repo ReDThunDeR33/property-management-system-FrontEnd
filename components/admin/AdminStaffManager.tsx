@@ -1,334 +1,242 @@
 "use client";
 
 /* ============================================================
-   ADMIN STAFF MANAGER — components/admin/AdminStaffManager.tsx
+   ADMIN STAFF MANAGER (client component) — pure Tailwind
    ------------------------------------------------------------
-   Same course concepts as AdminLandlordManager (SSR + CSR
-   hybrid, useState, Zod create/update schemas mirroring the
-   backend DTOs, axios + NEXT_PUBLIC_API_URL, DaisyUI modal).
-
-   Staff-specific: CreateStaffDto = name/email/phone/password;
-   UpdateStaffDto = name/email/phone (no password).
+   Full CRUD for staff members. Mirrors CreateStaffDto /
+   UpdateStaffDto (create needs a password, update doesn't).
    ============================================================ */
 
 import { useState } from "react";
 import axios from "axios";
 import { z } from "zod";
+import type { Staff } from "@/lib/adminPeople";
 import { authHeader } from "@/lib/getToken";
-import AdminPeopleTable, { type AdminPeopleRow } from "./AdminPeopleTable";
+import {
+  AdminPageHeader,
+  AdminAlert,
+  AdminModal,
+  Field,
+  btnPrimary,
+  btnSecondary,
+  btnDanger,
+  inputClass,
+} from "@/lib/adminUi";
+import AdminPeopleTable from "./AdminPeopleTable";
 
-type StaffMember = {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
-  status: string;
-  created_at: string;
-  created_by: { id: number; name: string } | null;
-};
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
-/* Zod schemas mirroring CreateStaffDto / UpdateStaffDto. */
-const createSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  email: z.string().min(1, "Email is required").email("Enter a valid email"),
-  phone: z.string().min(1, "Phone is required"),
+/* ---------- Zod schemas (mirror the backend DTOs) ---------- */
+const createStaffSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  email: z.string().trim().email("Enter a valid email"),
+  phone: z.string().trim().min(1, "Phone is required"),
   password: z.string().min(4, "Password must be at least 4 characters"),
 });
 
-const updateSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  email: z.string().min(1, "Email is required").email("Enter a valid email"),
-  phone: z.string().min(1, "Phone is required"),
+const updateStaffSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  email: z.string().trim().email("Enter a valid email"),
+  phone: z.string().trim().min(1, "Phone is required"),
 });
 
-type CreateForm = z.infer<typeof createSchema>;
-type FieldErrors = Partial<Record<keyof CreateForm, string>>;
+type FormState = { name: string; email: string; phone: string; password: string };
+const EMPTY: FormState = { name: "", email: "", phone: "", password: "" };
 
-const EMPTY_CREATE: CreateForm = { name: "", email: "", phone: "", password: "" };
-
-export default function AdminStaffManager({
-  initialStaff,
-}: {
-  initialStaff: StaffMember[];
-}) {
-  const [staff, setStaff] = useState<StaffMember[]>(initialStaff);
-  const [banner, setBanner] = useState("");
-
+export default function AdminStaffManager({ staff }: { staff: Staff[] }) {
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState<CreateForm>(EMPTY_CREATE);
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [editing, setEditing] = useState<Staff | null>(null);
+  const [deleting, setDeleting] = useState<Staff | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY);
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<StaffMember | null>(null);
+  const [banner, setBanner] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
-  function handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
-  }
-
-  function openCreateModal() {
-    setEditingId(null);
-    setForm(EMPTY_CREATE);
-    setFieldErrors({});
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY);
+    setErrors({});
     setModalOpen(true);
-  }
+  };
 
-  function openEditModal(member: StaffMember) {
-    setEditingId(member.id);
+  const openEdit = (member: Staff) => {
+    setEditing(member);
     setForm({ name: member.name, email: member.email, phone: member.phone, password: "" });
-    setFieldErrors({});
+    setErrors({});
     setModalOpen(true);
-  }
+  };
 
-  function closeModal() {
-    setModalOpen(false);
-    setEditingId(null);
-    setFieldErrors({});
-  }
+  /* ---------- Zod validate + Axios POST/PATCH ---------- */
+  const handleSubmit = async () => {
+    setBanner(null);
 
-  async function refresh() {
-    const response = await axios.get(
-      process.env.NEXT_PUBLIC_API_URL + "/admin/staff/allstaff",
-      { headers: authHeader() },
-    );
-    setStaff(response.data);
-  }
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBanner("");
-
-    const schema = editingId === null ? createSchema : updateSchema;
-    const result = schema.safeParse(form);
-
+    const schema = editing ? updateStaffSchema : createStaffSchema;
+    const result = schema.safeParse(editing ? { ...form, password: undefined } : form);
     if (!result.success) {
-      const newErrors: FieldErrors = {};
-      result.error.issues.forEach((issue) => {
-        const field = issue.path[0] as keyof CreateForm;
-        if (field && !newErrors[field]) newErrors[field] = issue.message;
-      });
-      setFieldErrors(newErrors);
+      const fieldErrors: Partial<Record<keyof FormState, string>> = {};
+      for (const issue of result.error.issues) {
+        const key = issue.path[0] as keyof FormState;
+        if (!fieldErrors[key]) fieldErrors[key] = issue.message;
+      }
+      setErrors(fieldErrors);
       return;
     }
 
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-      setFieldErrors({});
-
-      if (editingId === null) {
-        await axios.post(
-          process.env.NEXT_PUBLIC_API_URL + "/admin/staff/create",
-          result.data,
-          { headers: authHeader() },
-        );
-        setBanner("Staff member created successfully.");
+      if (editing) {
+        await axios.patch(`${API}/admin/staff/update/${editing.id}`, result.data, {
+          headers: authHeader(),
+        });
+        setBanner({ kind: "success", text: `Staff #${editing.id} updated — refreshing…` });
       } else {
-        await axios.patch(
-          process.env.NEXT_PUBLIC_API_URL + `/admin/staff/update/${editingId}`,
-          result.data,
-          { headers: authHeader() },
-        );
-        setBanner("Staff member updated successfully.");
+        await axios.post(`${API}/admin/staff/create`, result.data, { headers: authHeader() });
+        setBanner({ kind: "success", text: "Staff member created — refreshing…" });
       }
-
-      closeModal();
-      await refresh();
-      setTimeout(() => setBanner(""), 4000);
+      setModalOpen(false);
+      setTimeout(() => window.location.reload(), 700);
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const message = error.response?.data?.message;
-        setBanner(typeof message === "string" ? message : "Could not save the staff member.");
-      } else {
-        setBanner("Something went wrong.");
-      }
-    } finally {
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data?.message ?? "Request failed")
+        : "Unexpected error";
+      setBanner({ kind: "error", text: String(message) });
       setSubmitting(false);
     }
-  }
+  };
 
-  async function handleDelete() {
-    if (!deleteTarget) return;
+  /* ---------- Axios DELETE ---------- */
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-      await axios.delete(
-        process.env.NEXT_PUBLIC_API_URL + `/admin/staff/delete/${deleteTarget.id}`,
-        { headers: authHeader() },
-      );
-      setBanner("Staff member deleted.");
-      setDeleteTarget(null);
-      await refresh();
-      setTimeout(() => setBanner(""), 4000);
-    } catch {
-      setBanner("Could not delete the staff member.");
-    } finally {
+      await axios.delete(`${API}/admin/staff/delete/${deleting.id}`, { headers: authHeader() });
+      setBanner({ kind: "success", text: `Staff #${deleting.id} deleted — refreshing…` });
+      setDeleting(null);
+      setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data?.message ?? "Delete failed")
+        : "Unexpected error";
+      setBanner({ kind: "error", text: String(message) });
       setSubmitting(false);
     }
-  }
-
-  const rows: AdminPeopleRow[] = staff.map((member) => ({
-    id: member.id,
-    name: member.name,
-    email: member.email,
-    meta: member.phone,
-    status: member.status,
-    footer: `Created by ${member.created_by?.name ?? "admin"}`,
-    detailHref: `/admin/staff/${member.id}`,
-  }));
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Staff Management</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Manage staff members and their responsibilities. {staff.length} total.
-          </p>
-        </div>
-        <button className="btn btn-primary btn-sm" onClick={openCreateModal}>
-          + Add Staff
-        </button>
-      </div>
+      <AdminPageHeader
+        title="Staff"
+        subtitle="Operations team — dispatches workers and completes work orders."
+        action={
+          <button type="button" onClick={openCreate} className={btnPrimary}>
+            + Add Staff
+          </button>
+        }
+      />
 
-      {banner && (
-        <div className="alert border-base-300 bg-white shadow-sm">
-          <span className="text-sm text-success">{banner}</span>
-        </div>
-      )}
+      {banner && <AdminAlert kind={banner.kind}>{banner.text}</AdminAlert>}
 
       <AdminPeopleTable
-        metaLabel="Phone"
-        rows={rows}
-        emptyMessage="No staff members created yet."
-        onEdit={(row) => {
-          const member = staff.find((item) => item.id === row.id);
-          if (member) openEditModal(member);
-        }}
-        onDelete={(row) => {
-          const member = staff.find((item) => item.id === row.id);
-          if (member) setDeleteTarget(member);
+        columns={["#", "Name", "Email", "Phone", "Status", "Created By"]}
+        rows={staff}
+        getRowKey={(row) => (row as Staff).id}
+        onEdit={openEdit}
+        onDelete={(row) => setDeleting(row as Staff)}
+        emptyMessage="No staff members yet."
+        renderRow={(row) => {
+          const member = row as Staff;
+          return (
+            <>
+              <td className="px-4 py-3 text-sm font-mono text-xs text-gray-500">#{member.id}</td>
+              <td className="px-4 py-3 text-sm font-semibold text-gray-900">{member.name}</td>
+              <td className="px-4 py-3 text-sm text-gray-700">{member.email}</td>
+              <td className="px-4 py-3 text-sm text-gray-700">{member.phone}</td>
+              <td className="px-4 py-3 text-sm">
+                <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                  {member.status ?? "active"}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-sm text-gray-700">{member.created_by?.name ?? "—"}</td>
+            </>
+          );
         }}
       />
 
-      {/* Add/Edit modal (Zod-validated) */}
-      {modalOpen && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-md">
-            <h3 className="text-lg font-bold">
-              {editingId === null ? "Add Staff" : "Edit Staff"}
-            </h3>
-
-            <form onSubmit={handleSubmit} noValidate className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-600">
-                  Name
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={form.name}
-                  onChange={handleInputChange}
-                  className="input input-bordered w-full"
-                  disabled={submitting}
-                />
-                {fieldErrors.name && (
-                  <p className="mt-1 text-xs text-error">{fieldErrors.name}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-600">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  value={form.email}
-                  onChange={handleInputChange}
-                  className="input input-bordered w-full"
-                  disabled={submitting}
-                />
-                {fieldErrors.email && (
-                  <p className="mt-1 text-xs text-error">{fieldErrors.email}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-600">
-                  Phone
-                </label>
-                <input
-                  type="text"
-                  name="phone"
-                  value={form.phone}
-                  onChange={handleInputChange}
-                  className="input input-bordered w-full"
-                  disabled={submitting}
-                />
-                {fieldErrors.phone && (
-                  <p className="mt-1 text-xs text-error">{fieldErrors.phone}</p>
-                )}
-              </div>
-
-              {editingId === null && (
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-600">
-                    Password (min 4 characters)
-                  </label>
-                  <input
-                    type="password"
-                    name="password"
-                    value={form.password}
-                    onChange={handleInputChange}
-                    className="input input-bordered w-full"
-                    disabled={submitting}
-                  />
-                  {fieldErrors.password && (
-                    <p className="mt-1 text-xs text-error">{fieldErrors.password}</p>
-                  )}
-                </div>
-              )}
-
-              <div className="modal-action">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={closeModal}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary btn-sm" disabled={submitting}>
-                  {submitting ? "Saving..." : editingId === null ? "Create" : "Save changes"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete confirmation modal */}
-      {deleteTarget && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-sm">
-            <h3 className="text-lg font-bold">Delete staff member?</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              &quot;{deleteTarget.name}&quot; will be removed permanently.
-            </p>
-            <div className="modal-action">
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setDeleteTarget(null)}
+      {/* Create / Edit modal */}
+      <AdminModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? `Edit Staff #${editing.id}` : "Add Staff"}
+      >
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }}
+          className="space-y-4"
+        >
+          <Field label="Name" error={errors.name}>
+            <input
+              className={inputClass}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+          <Field label="Email" error={errors.email}>
+            <input
+              type="email"
+              className={inputClass}
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+          <Field label="Phone" error={errors.phone}>
+            <input
+              className={inputClass}
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+          {!editing && (
+            <Field label="Password" error={errors.password}>
+              <input
+                type="password"
+                className={inputClass}
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
                 disabled={submitting}
-              >
-                Cancel
-              </button>
-              <button className="btn btn-error btn-sm" onClick={handleDelete} disabled={submitting}>
-                {submitting ? "Deleting..." : "Delete"}
-              </button>
-            </div>
+              />
+            </Field>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setModalOpen(false)} className={btnSecondary}>
+              Cancel
+            </button>
+            <button type="submit" disabled={submitting} className={btnPrimary}>
+              {submitting ? "Saving…" : editing ? "Save Changes" : "Create Staff"}
+            </button>
           </div>
+        </form>
+      </AdminModal>
+
+      {/* Delete confirmation */}
+      <AdminModal open={deleting !== null} onClose={() => setDeleting(null)} title="Delete Staff">
+        <p className="text-sm text-gray-600">
+          Delete <strong>{deleting?.name}</strong> permanently? This cannot be undone.
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={() => setDeleting(null)} className={btnSecondary}>
+            Cancel
+          </button>
+          <button type="button" onClick={handleDelete} disabled={submitting} className={btnDanger}>
+            {submitting ? "Deleting…" : "Delete"}
+          </button>
         </div>
-      )}
+      </AdminModal>
     </div>
   );
 }

@@ -1,425 +1,288 @@
 "use client";
 
 /* ============================================================
-   ADMIN BLOCKS PAGE — app/admin/blocks/page.tsx  (CSR)
+   BLOCKS PAGE (CSR) — pure Tailwind
    ------------------------------------------------------------
-   COURSE CONCEPTS DEMONSTRATED IN THIS FILE:
-
-   1. CLIENT-SIDE RENDERING (CSR) — course table:
-      "Admin panel -> CSR" and "Search page with filters -> CSR".
-      Interactive management page: filters + create/edit/delete
-      forms run in the browser with local state.
-
-   2. REACT HOOKS:
-      - useState  -> list, filters, modal + form state
-      - useEffect -> initial load on mount
-
-   3. ZOD VALIDATION — create/edit form validated with a Zod
-      schema (safeParse) before any request. No vanilla/HTML
-      validation anywhere.
-
-   4. AXIOS (course convention) — axios direct +
-      process.env.NEXT_PUBLIC_API_URL from .env.local.
-      fetch() is never used.
-
-   5. DAISYUI — table, modal, select, badge, alert, btn.
+   Course concepts: CSR ("Admin panel → CSR"), useState +
+   useEffect, Zod validation (mirrors CreateBlockDto), Axios
+   direct + NEXT_PUBLIC_API_URL with cookie JWT, pure Tailwind
+   table/modal/alert (DaisyUI removed).
    ============================================================ */
 
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { z } from "zod";
 import { authHeader } from "@/lib/getToken";
+import {
+  AdminPageHeader,
+  AdminAlert,
+  AdminModal,
+  Field,
+  btnPrimary,
+  btnSecondary,
+  btnDanger,
+  btnGhost,
+  inputClass,
+  thClass,
+  tdClass,
+} from "@/lib/adminUi";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
 type Block = {
   id: number;
   name: string;
   address: string;
   created_at: string;
-  created_by: { id: number; name: string } | null;
+  created_by?: { id: number; name: string } | null;
 };
 
-/* Zod schema mirroring the backend DTO:
-   name (required, max 100), address (required, max 255). */
+/* ---------- Zod schema (mirrors CreateBlockDto) ---------- */
 const blockSchema = z.object({
-  name: z
-    .string()
-    .min(1, "Name is required")
-    .max(100, "Name must be at most 100 characters"),
-  address: z
-    .string()
-    .min(1, "Address is required")
-    .max(255, "Address must be at most 255 characters"),
+  name: z.string().trim().min(1, "Name is required").max(100, "Max 100 characters"),
+  address: z.string().trim().min(1, "Address is required").max(255, "Max 255 characters"),
 });
 
-type BlockForm = z.infer<typeof blockSchema>;
-type FieldErrors = Partial<Record<keyof BlockForm, string>>;
+type FormState = { name: string; address: string };
+const EMPTY: FormState = { name: "", address: "" };
 
-export default function AdminBlocksPage() {
-  // ----- list + filter state (CSR) -----
+export default function BlocksPage() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [keyword, setKeyword] = useState("");
-
-  // ----- modal + form state -----
+  const [loadFailed, setLoadFailed] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState<BlockForm>({ name: "", address: "" });
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [editing, setEditing] = useState<Block | null>(null);
+  const [deleting, setDeleting] = useState<Block | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY);
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Block | null>(null);
-  const [banner, setBanner] = useState("");
+  const [banner, setBanner] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
-  /* useEffect: load all blocks once on mount (CSR pattern). */
-  useEffect(() => {
-    fetchBlocks();
-  }, []);
-
-  // Axios GET — all blocks (JWT protected).
-  async function fetchBlocks() {
+  /* ---------- Axios GET (useEffect on mount) ---------- */
+  const loadBlocks = async () => {
+    setLoading(true);
+    setLoadFailed(false);
     try {
-      setLoading(true);
-      setError("");
-      const response = await axios.get(
-        process.env.NEXT_PUBLIC_API_URL + "/admin/block/allblocks",
-        { headers: authHeader() },
-      );
+      const response = await axios.get<Block[]>(`${API}/admin/block/allblocks`, {
+        headers: authHeader(),
+      });
       setBlocks(response.data);
     } catch {
-      setError("Could not load blocks. Is the backend running?");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  // Axios GET with query param — backend keyword search.
-  async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = keyword.trim();
-    if (!trimmed) {
-      fetchBlocks();
-      return;
-    }
-    try {
-      setError("");
-      const response = await axios.get(
-        process.env.NEXT_PUBLIC_API_URL + "/admin/block/search",
-        { params: { keyword: trimmed }, headers: authHeader() },
-      );
-      setBlocks(response.data);
-    } catch {
-      setError("Search failed.");
-    }
-  }
+  useEffect(() => {
+    loadBlocks();
+  }, []);
 
-  function openCreateModal() {
-    setEditingId(null);
-    setForm({ name: "", address: "" });
-    setFieldErrors({});
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY);
+    setErrors({});
     setModalOpen(true);
-  }
+  };
 
-  function openEditModal(block: Block) {
-    setEditingId(block.id);
+  const openEdit = (block: Block) => {
+    setEditing(block);
     setForm({ name: block.name, address: block.address });
-    setFieldErrors({});
+    setErrors({});
     setModalOpen(true);
-  }
+  };
 
-  function closeModal() {
-    setModalOpen(false);
-    setEditingId(null);
-    setFieldErrors({});
-  }
-
-  // Controlled inputs (useState).
-  function handleInputChange(
-    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) {
-    const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
-  }
-
-  /* Zod validates first; only valid data reaches the backend. */
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBanner("");
-
+  /* ---------- Zod + Axios POST/PATCH ---------- */
+  const handleSubmit = async () => {
+    setBanner(null);
     const result = blockSchema.safeParse(form);
     if (!result.success) {
-      const newErrors: FieldErrors = {};
-      result.error.issues.forEach((issue) => {
-        const field = issue.path[0] as keyof BlockForm;
-        newErrors[field] = issue.message;
-      });
-      setFieldErrors(newErrors);
+      const fieldErrors: Partial<Record<keyof FormState, string>> = {};
+      for (const issue of result.error.issues) {
+        const key = issue.path[0] as keyof FormState;
+        if (!fieldErrors[key]) fieldErrors[key] = issue.message;
+      }
+      setErrors(fieldErrors);
       return;
     }
 
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-      setFieldErrors({});
-
-      if (editingId === null) {
-        // CREATE
-        await axios.post(
-          process.env.NEXT_PUBLIC_API_URL + "/admin/block/create",
-          result.data,
-          { headers: authHeader() },
-        );
-        setBanner("Block created successfully.");
+      if (editing) {
+        await axios.patch(`${API}/admin/block/update/${editing.id}`, result.data, {
+          headers: authHeader(),
+        });
+        setBanner({ kind: "success", text: `Block #${editing.id} updated.` });
       } else {
-        // UPDATE
-        await axios.patch(
-          process.env.NEXT_PUBLIC_API_URL + `/admin/block/update/${editingId}`,
-          result.data,
-          { headers: authHeader() },
-        );
-        setBanner("Block updated successfully.");
+        await axios.post(`${API}/admin/block/create`, result.data, { headers: authHeader() });
+        setBanner({ kind: "success", text: "Block created." });
       }
-
-      closeModal();
-      await fetchBlocks();
-      setTimeout(() => setBanner(""), 4000);
+      setModalOpen(false);
+      await loadBlocks();
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const message = error.response?.data?.message;
-        setBanner(typeof message === "string" ? message : "Could not save the block.");
-      } else {
-        setBanner("Something went wrong.");
-      }
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data?.message ?? "Request failed")
+        : "Unexpected error";
+      setBanner({ kind: "error", text: String(message) });
     } finally {
       setSubmitting(false);
     }
-  }
+  };
 
-  // Axios DELETE with confirmation modal.
-  async function handleDelete() {
-    if (!deleteTarget) return;
+  /* ---------- Axios DELETE ---------- */
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setSubmitting(true);
     try {
-      await axios.delete(
-        process.env.NEXT_PUBLIC_API_URL + `/admin/block/delete/${deleteTarget.id}`,
-        { headers: authHeader() },
-      );
-      setBanner("Block deleted.");
-      setDeleteTarget(null);
-      await fetchBlocks();
-      setTimeout(() => setBanner(""), 4000);
-    } catch {
-      setBanner("Could not delete the block (it may have buildings attached).");
+      await axios.delete(`${API}/admin/block/delete/${deleting.id}`, { headers: authHeader() });
+      setBanner({ kind: "success", text: `Block #${deleting.id} deleted.` });
+      setDeleting(null);
+      await loadBlocks();
+    } catch (error) {
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data?.message ?? "Delete failed")
+        : "Unexpected error";
+      setBanner({ kind: "error", text: String(message) });
     } finally {
       setSubmitting(false);
     }
-  }
-
-  // Instant client-side filter on top of the fetched list (CSR).
-  const visibleBlocks = blocks.filter((block) =>
-    block.name.toLowerCase().includes(keyword.trim().toLowerCase()),
-  );
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Blocks</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Top-level areas that contain buildings. {blocks.length} total.
-          </p>
-        </div>
-        <button className="btn btn-primary btn-sm" onClick={openCreateModal}>
-          + New Block
-        </button>
-      </div>
+      <AdminPageHeader
+        title="Blocks"
+        subtitle="Top-level areas — buildings live inside blocks."
+        action={
+          <button type="button" onClick={openCreate} className={btnPrimary}>
+            + Add Block
+          </button>
+        }
+      />
 
-      {banner && (
-        <div className="alert border-base-300 bg-white shadow-sm">
-          <span className="text-sm text-success">{banner}</span>
+      {banner && <AdminAlert kind={banner.kind}>{banner.text}</AdminAlert>}
+
+      {loading && (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-14 animate-pulse rounded-lg bg-gray-100" />
+          ))}
         </div>
       )}
 
-      {/* Keyword search through the backend (Axios query param) */}
-      <form onSubmit={handleSearch} className="flex items-end gap-2">
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">
-            Search blocks
-          </label>
-          <input
-            type="text"
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="Search by name..."
-            className="input input-bordered input-sm w-64"
-          />
-        </div>
-        <button type="submit" className="btn btn-sm">
-          Search
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => {
-            setKeyword("");
-            fetchBlocks();
-          }}
-        >
-          Clear
-        </button>
-      </form>
-
-      {loading ? (
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="card-body space-y-3">
-            <div className="h-4 w-40 animate-pulse rounded bg-base-300" />
-            <div className="h-4 w-full animate-pulse rounded bg-base-300" />
-          </div>
-        </div>
-      ) : error ? (
-        <div className="alert border-base-300 bg-white shadow-sm">
-          <span className="text-sm text-error">{error}</span>
-          <button className="btn btn-xs" onClick={fetchBlocks}>
+      {!loading && loadFailed && (
+        <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+          <p className="text-sm text-gray-500">Cannot reach the backend.</p>
+          <button type="button" onClick={loadBlocks} className={`${btnSecondary} mt-4`}>
             Retry
           </button>
         </div>
-      ) : visibleBlocks.length === 0 ? (
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="card-body items-center text-center">
-            <p className="text-sm text-gray-500">No blocks match your search.</p>
-          </div>
+      )}
+
+      {!loading && !loadFailed && blocks.length === 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+          <p className="text-sm text-gray-500">No blocks yet.</p>
+          <button type="button" onClick={openCreate} className={`${btnPrimary} mt-4`}>
+            Create the first block
+          </button>
         </div>
-      ) : (
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr className="text-xs uppercase text-gray-500">
-                  <th>Name</th>
-                  <th>Address</th>
-                  <th>Created</th>
-                  <th className="text-right">Actions</th>
+      )}
+
+      {!loading && !loadFailed && blocks.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className={thClass}>#</th>
+                <th className={thClass}>Name</th>
+                <th className={thClass}>Address</th>
+                <th className={thClass}>Created By</th>
+                <th className={thClass}>Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {blocks.map((block) => (
+                <tr key={block.id} className="transition hover:bg-gray-50">
+                  <td className={`${tdClass} font-mono text-xs`}>#{block.id}</td>
+                  <td className={`${tdClass} font-semibold text-gray-900`}>{block.name}</td>
+                  <td className={tdClass}>{block.address}</td>
+                  <td className={tdClass}>{block.created_by?.name ?? "—"}</td>
+                  <td className={tdClass}>
+                    <div className="flex gap-1">
+                      <button type="button" onClick={() => openEdit(block)} className={btnGhost}>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleting(block)}
+                        className={`${btnGhost} text-red-600 hover:bg-red-50 hover:text-red-700`}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {visibleBlocks.map((block) => (
-                  <tr key={block.id}>
-                    <td className="font-semibold">{block.name}</td>
-                    <td className="max-w-sm text-sm text-gray-500">{block.address}</td>
-                    <td className="text-xs text-gray-500">
-                      {new Date(block.created_at).toLocaleDateString()}
-                      <br />
-                      <span className="text-gray-400">
-                        by {block.created_by?.name ?? "admin"}
-                      </span>
-                    </td>
-                    <td className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          className="btn btn-ghost btn-xs"
-                          onClick={() => openEditModal(block)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-xs text-error"
-                          onClick={() => setDeleteTarget(block)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Create/Edit modal (Zod-validated form) */}
-      {modalOpen && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-md">
-            <h3 className="text-lg font-bold">
-              {editingId === null ? "New Block" : "Edit Block"}
-            </h3>
-
-            <form onSubmit={handleSubmit} noValidate className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-600">
-                  Name
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={form.name}
-                  onChange={handleInputChange}
-                  placeholder="e.g. Block A"
-                  className="input input-bordered w-full"
-                  disabled={submitting}
-                />
-                {fieldErrors.name && (
-                  <p className="mt-1 text-xs text-error">{fieldErrors.name}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-600">
-                  Address
-                </label>
-                <textarea
-                  name="address"
-                  rows={3}
-                  value={form.address}
-                  onChange={handleInputChange}
-                  placeholder="Full address of the block"
-                  className="textarea textarea-bordered w-full"
-                  disabled={submitting}
-                />
-                {fieldErrors.address && (
-                  <p className="mt-1 text-xs text-error">{fieldErrors.address}</p>
-                )}
-              </div>
-
-              <div className="modal-action">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={closeModal}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary btn-sm" disabled={submitting}>
-                  {submitting ? "Saving..." : editingId === null ? "Create" : "Save changes"}
-                </button>
-              </div>
-            </form>
+      {/* Create / Edit modal */}
+      <AdminModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editing ? `Edit Block #${editing.id}` : "Add Block"}
+      >
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }}
+          className="space-y-4"
+        >
+          <Field label="Name" error={errors.name}>
+            <input
+              className={inputClass}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+          <Field label="Address" error={errors.address}>
+            <input
+              className={inputClass}
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+              disabled={submitting}
+            />
+          </Field>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setModalOpen(false)} className={btnSecondary}>
+              Cancel
+            </button>
+            <button type="submit" disabled={submitting} className={btnPrimary}>
+              {submitting ? "Saving…" : editing ? "Save Changes" : "Create Block"}
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </AdminModal>
 
-      {/* Delete confirmation modal */}
-      {deleteTarget && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-sm">
-            <h3 className="text-lg font-bold">Delete block?</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              &quot;{deleteTarget.name}&quot; will be removed permanently.
-            </p>
-            <div className="modal-action">
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setDeleteTarget(null)}
-                disabled={submitting}
-              >
-                Cancel
-              </button>
-              <button className="btn btn-error btn-sm" onClick={handleDelete} disabled={submitting}>
-                {submitting ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
+      {/* Delete confirmation */}
+      <AdminModal open={deleting !== null} onClose={() => setDeleting(null)} title="Delete Block">
+        <p className="text-sm text-gray-600">
+          Delete <strong>{deleting?.name}</strong>? Buildings inside it may become orphaned.
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={() => setDeleting(null)} className={btnSecondary}>
+            Cancel
+          </button>
+          <button type="button" onClick={handleDelete} disabled={submitting} className={btnDanger}>
+            {submitting ? "Deleting…" : "Delete"}
+          </button>
         </div>
-      )}
+      </AdminModal>
     </div>
   );
 }

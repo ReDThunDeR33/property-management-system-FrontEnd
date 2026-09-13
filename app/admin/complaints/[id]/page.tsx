@@ -2,334 +2,271 @@
 
 /* ============================================================
    COMPLAINT DETAIL — app/admin/complaints/[id]/page.tsx
+   (CSR #3, DYNAMIC ROUTE) — pure Tailwind
    ------------------------------------------------------------
    COURSE CONCEPTS DEMONSTRATED IN THIS FILE:
 
-   1. DYNAMIC ROUTING — the [id] folder makes this a dynamic
-      route: /admin/complaints/3, /admin/complaints/7, ... all
-      render this ONE page. Next.js passes the URL segment as
-      the `id` param, read with the useParams() hook (Next 15/16
-      client-component style).
+   1. DYNAMIC ROUTING — the [id] folder makes this ONE page
+      render for /admin/complaints/1, /admin/complaints/7, …
+      The URL segment is read with the useParams() hook.
 
-   2. CSR — "use client": the complaint is fetched from the
-      browser after mount (private admin data + interactivity),
-      following the course table ("Admin panel -> CSR").
+   2. CSR — "use client": the complaint is fetched in the
+      browser via useEffect + Axios after mount.
 
-   3. REACT HOOKS:
-      - useParams  -> dynamic route parameter (from next/navigation)
-      - useEffect  -> loads the complaint once on mount
-      - useState   -> complaint data, review form fields,
-        submit state, 404 flag
+   3. ZOD VALIDATION — the Admin Review form uses a schema
+      with a refinement: RESOLVED/REJECTED requires an
+      inspection note of at least 5 characters. The form is
+      noValidate — validation is 100% Zod (course rule).
 
-   4. ZOD VALIDATION — the admin's review form (status choice +
-      inspection note) is validated with a Zod schema before the
-      request. A RESOLVED/REJECTED decision requires a note
-      (min 5 chars) — enforced by Zod, not by HTML/vanilla JS.
-
-   5. AXIOS — axios imported directly, backend URL from
-      NEXT_PUBLIC_API_URL in .env.local (course convention).
-      GET /admin/complaint/find/:id and PATCH
-      /admin/complaint/update/:id, JWT attached via
-      authHeader(). fetch() is never used.
-
-   6. DAISYUI — badge, select, textarea, alert, btn components.
+   4. Axios PATCH — submits the review to
+      PATCH /admin/complaint/update/:id with the JWT cookie.
    ============================================================ */
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { z } from "zod";
 import axios from "axios";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { z } from "zod";
 import { authHeader } from "@/lib/getToken";
+import {
+  AdminPageHeader,
+  AdminAlert,
+  AdminBadge,
+  Field,
+  btnPrimary,
+  btnSecondary,
+  inputClass,
+} from "@/lib/adminUi";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
 type Complaint = {
   id: number;
-  filed_by_type: string;
-  filed_by_id: number;
-  against_type: string;
-  against_id: number | null;
+  title: string;
   description: string;
   status: string;
-  admin_note: string | null;
-  reviewed_by: { id: number; name: string } | null;
+  type?: string | null;
+  filed_by_id?: number | null;
+  admin_note?: string | null;
+  reviewed_by?: { id: number; name: string } | null;
   created_at: string;
+  updated_at?: string;
 };
 
-const STATUS_OPTIONS = ["PENDING", "IN_PROGRESS", "RESOLVED", "REJECTED"] as const;
-type ReviewStatus = (typeof STATUS_OPTIONS)[number];
-
-/* Zod schema for the admin review form:
-   - status must be one of the four backend enum values
-   - a decision (RESOLVED / REJECTED) requires an inspection note */
+/* ---------- Zod schema for the review form ---------- */
 const reviewSchema = z
   .object({
-    status: z.enum(["PENDING", "IN_PROGRESS", "RESOLVED", "REJECTED"], {
-      message: "Please choose a valid status",
-    }),
-    admin_note: z.string().max(1000, "Note is too long (max 1000 characters)"),
+    status: z.enum(["PENDING", "IN_PROGRESS", "RESOLVED", "REJECTED"]),
+    admin_note: z.string().trim().max(1000, "Note is too long (max 1000)"),
   })
-  .refine(
-    (data) =>
-      !(data.status === "RESOLVED" || data.status === "REJECTED") ||
-      data.admin_note.trim().length >= 5,
-    {
-      message:
-        "An inspection note (min 5 characters) is required when resolving or rejecting",
-      path: ["admin_note"],
-    },
-  );
+  .refine((data) => !["RESOLVED", "REJECTED"].includes(data.status) || data.admin_note.length >= 5, {
+    message: "An inspection note (min 5 characters) is required to RESOLVE or REJECT.",
+    path: ["admin_note"],
+  });
 
-type ReviewForm = z.infer<typeof reviewSchema>;
+type FormState = { status: string; admin_note: string };
 
 export default function ComplaintDetailPage() {
-  // Dynamic route parameter: /admin/complaints/[id]
-  const params = useParams();
-  const complaintId = params?.id;
-
+  /* ---------- dynamic route param (useParams hook) ---------- */
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
   const router = useRouter();
 
-  // ----- state (all browser-side — CSR) -----
   const [complaint, setComplaint] = useState<Complaint | null>(null);
   const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [banner, setBanner] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
-  const [status, setStatus] = useState<ReviewStatus>("PENDING");
-  const [note, setNote] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<{ status?: string; admin_note?: string }>({});
+  const [form, setForm] = useState<FormState>({ status: "IN_PROGRESS", admin_note: "" });
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [banner, setBanner] = useState("");
 
-  /* useEffect: load this complaint once on mount using the
-     dynamic [id] parameter. */
+  /* ---------- load the complaint (Axios + cookie JWT) ---------- */
   useEffect(() => {
-    if (!complaintId) return;
-    fetchComplaint(String(complaintId));
-  }, [complaintId]);
+    if (!id) return;
+    let cancelled = false;
 
-  // Axios GET /admin/complaint/find/:id (JWT protected).
-  async function fetchComplaint(id: string) {
-    try {
+    const load = async () => {
       setLoading(true);
-      setNotFound(false);
+      try {
+        const response = await axios.get<Complaint>(`${API}/admin/complaint/find/${id}`, {
+          headers: authHeader(),
+        });
+        if (cancelled) return;
+        if (!response.data || typeof response.data.id !== "number") {
+          setMissing(true); // backend returned 404 JSON
+        } else {
+          setComplaint(response.data);
+          setForm({ status: response.data.status, admin_note: response.data.admin_note ?? "" });
+        }
+      } catch {
+        if (!cancelled) setMissing(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
 
-      const response = await axios.get(
-        process.env.NEXT_PUBLIC_API_URL + `/admin/complaint/find/${id}`,
-        { headers: authHeader() },
-      );
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
-      setComplaint(response.data);
-      // pre-fill the review form with the current values
-      setStatus(response.data.status);
-      setNote(response.data.admin_note ?? "");
-    } catch (error) {
-      // 404 -> invalid id -> show the not-found view
-      setNotFound(true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /* Submit the admin review: Zod validates the form first,
-     then Axios PATCH /admin/complaint/update/:id records the
-     new status + admin note (reviewed_by is set by the backend
-     from the JWT). */
-  async function handleReview(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBanner("");
-
-    // ---- Zod validation (frontend validation only) ----
-    const formData: ReviewForm = { status, admin_note: note };
-    const result = reviewSchema.safeParse(formData);
-
+  /* ---------- Zod validation + Axios PATCH review ---------- */
+  const handleSubmit = async () => {
+    setBanner(null);
+    const result = reviewSchema.safeParse(form);
     if (!result.success) {
-      const newErrors: { status?: string; admin_note?: string } = {};
-      result.error.issues.forEach((issue) => {
-        const field = issue.path[0] as keyof typeof newErrors;
-        if (field) newErrors[field] = issue.message;
-      });
-      setFieldErrors(newErrors);
+      const fieldErrors: Partial<Record<keyof FormState, string>> = {};
+      for (const issue of result.error.issues) {
+        const key = issue.path[0] as keyof FormState;
+        if (!fieldErrors[key]) fieldErrors[key] = issue.message;
+      }
+      setErrors(fieldErrors);
       return;
     }
 
-    setFieldErrors({});
-
-    // ---- validated -> Axios PATCH ----
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-
-      await axios.patch(
-        process.env.NEXT_PUBLIC_API_URL + `/admin/complaint/update/${complaintId}`,
-        { status: result.data.status, admin_note: result.data.admin_note.trim() },
+      const response = await axios.patch<Complaint>(
+        `${API}/admin/complaint/update/${id}`,
+        result.data,
         { headers: authHeader() },
       );
-
-      setBanner(`Complaint marked as ${result.data.status}.`);
-      await fetchComplaint(String(complaintId)); // reload fresh data
-      setTimeout(() => setBanner(""), 4000);
+      setComplaint(response.data);
+      setForm({ status: response.data.status, admin_note: response.data.admin_note ?? "" });
+      setBanner({ kind: "success", text: `Complaint #${id} review saved.` });
     } catch {
-      setBanner("Could not update the complaint. Is the backend running?");
+      setBanner({ kind: "error", text: "Could not save the review. Is the backend running?" });
     } finally {
       setSubmitting(false);
     }
-  }
+  };
 
-  // ----- loading view -----
+  /* ---------- render states ---------- */
   if (loading) {
     return (
-      <div className="card mx-auto max-w-2xl border border-base-300 bg-white shadow-sm">
-        <div className="card-body space-y-3">
-          <div className="h-5 w-40 animate-pulse rounded bg-base-300" />
-          <div className="h-4 w-full animate-pulse rounded bg-base-300" />
-          <div className="h-4 w-3/4 animate-pulse rounded bg-base-300" />
-        </div>
+      <div className="space-y-4">
+        <div className="h-10 w-72 animate-pulse rounded-lg bg-gray-100" />
+        <div className="h-40 animate-pulse rounded-xl bg-gray-100" />
       </div>
     );
   }
 
-  // ----- invalid id -> not-found view -----
-  if (notFound || !complaint) {
+  if (missing || !complaint) {
     return (
-      <div className="card mx-auto max-w-md border border-base-300 bg-white shadow-sm">
-        <div className="card-body items-center text-center">
-          <h2 className="card-title text-xl">Complaint not found</h2>
-          <p className="text-sm text-gray-500">
-            Complaint #{complaintId} does not exist (or was deleted).
-          </p>
-          <Link href="/admin/complaints" className="btn btn-primary btn-sm mt-3">
-            Back to Complaint Center
-          </Link>
-        </div>
+      <div className="mx-auto max-w-md rounded-xl border border-gray-200 bg-white p-8 text-center">
+        <p className="text-5xl font-black text-dwellix-500">404</p>
+        <h2 className="mt-3 text-xl font-bold text-gray-900">Complaint not found</h2>
+        <p className="mt-2 text-sm text-gray-500">
+          Complaint #{id} does not exist or was deleted.
+        </p>
+        <button type="button" onClick={() => router.push("/admin/complaints")} className={`${btnPrimary} mt-6`}>
+          Back to Complaints
+        </button>
       </div>
     );
   }
 
-  // ----- detail view (basic JSX) -----
   return (
     <div className="space-y-6">
-      {/* Breadcrumb back to the list */}
-      <Link href="/admin/complaints" className="text-sm text-dwellix-500 hover:underline">
-        ← Back to Complaint Center
-      </Link>
+      <AdminPageHeader
+        title={`Complaint #${complaint.id}`}
+        subtitle={`Filed on ${new Date(complaint.created_at).toLocaleString()}`}
+        action={
+          <Link href="/admin/complaints" className={btnSecondary}>
+            ← All complaints
+          </Link>
+        }
+      />
 
-      {banner && (
-        <div className="alert border-base-300 bg-white shadow-sm">
-          <span className="text-sm text-success">{banner}</span>
-        </div>
-      )}
+      {banner && <AdminAlert kind={banner.kind}>{banner.text}</AdminAlert>}
 
-      {/* Complaint info card */}
-      <div className="card border border-base-300 bg-white shadow-sm">
-        <div className="card-body space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-xl font-bold">Complaint #{complaint.id}</h1>
-            <span className="badge badge-warning">{complaint.status}</span>
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        {/* Left: complaint details card */}
+        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <h2 className="text-xl font-bold text-gray-900">{complaint.title}</h2>
+            <AdminBadge status={complaint.status} />
           </div>
-
-          <p className="whitespace-pre-line text-sm leading-6">
+          <p className="mt-4 whitespace-pre-line text-sm leading-7 text-gray-600">
             {complaint.description}
           </p>
 
-          <div className="grid gap-4 border-t border-base-300 pt-4 text-sm sm:grid-cols-2">
+          <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-gray-100 pt-4 text-sm">
             <div>
-              <p className="text-xs uppercase text-gray-400">Filed by</p>
-              <p className="font-semibold">
-                {complaint.filed_by_type} #{complaint.filed_by_id}
-              </p>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">Type</dt>
+              <dd className="mt-1 text-gray-800">{complaint.type ?? "—"}</dd>
             </div>
             <div>
-              <p className="text-xs uppercase text-gray-400">Against</p>
-              <p className="font-semibold">
-                {complaint.against_type}
-                {complaint.against_id ? ` #${complaint.against_id}` : ""}
-              </p>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Filed by (role id)
+              </dt>
+              <dd className="mt-1 text-gray-800">{complaint.filed_by_id ?? "—"}</dd>
             </div>
             <div>
-              <p className="text-xs uppercase text-gray-400">Filed on</p>
-              <p>{new Date(complaint.created_at).toLocaleString()}</p>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Reviewed by
+              </dt>
+              <dd className="mt-1 text-gray-800">{complaint.reviewed_by?.name ?? "Not reviewed yet"}</dd>
             </div>
             <div>
-              <p className="text-xs uppercase text-gray-400">Reviewed by</p>
-              <p>
-                {complaint.reviewed_by
-                  ? `${complaint.reviewed_by.name} (admin #${complaint.reviewed_by.id})`
-                  : "Not reviewed yet"}
-              </p>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Last update
+              </dt>
+              <dd className="mt-1 text-gray-800">
+                {complaint.updated_at ? new Date(complaint.updated_at).toLocaleString() : "—"}
+              </dd>
             </div>
-          </div>
+          </dl>
+        </section>
 
-          {complaint.admin_note && (
-            <div className="rounded border border-base-300 bg-base-200 p-4">
-              <p className="text-xs uppercase text-gray-400">Current admin note</p>
-              <p className="mt-1 whitespace-pre-line text-sm">
-                {complaint.admin_note}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+        {/* Right: admin review form (Zod-validated) */}
+        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Admin Review</h2>
 
-      {/* Admin review form (Zod-validated, Axios PATCH) */}
-      <div className="card border border-base-300 bg-white shadow-sm">
-        <div className="card-body">
-          <h2 className="card-title text-base">Admin Review</h2>
-          <p className="text-xs text-gray-500">
-            Decide the outcome and record your inspection note.
-          </p>
-
-          <form onSubmit={handleReview} noValidate className="mt-2 space-y-4">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Status
-              </label>
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSubmit();
+            }}
+            className="mt-4 space-y-4"
+          >
+            <Field label="Status" error={errors.status}>
               <select
-                className="select select-bordered w-full max-w-xs"
-                value={status}
-                onChange={(event) => setStatus(event.target.value as ReviewStatus)}
+                className={inputClass}
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
                 disabled={submitting}
               >
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                {["PENDING", "IN_PROGRESS", "RESOLVED", "REJECTED"].map((s) => (
+                  <option key={s} value={s}>
+                    {s.replace(/_/g, " ")}
                   </option>
                 ))}
               </select>
-              {fieldErrors.status && (
-                <p className="mt-1 text-xs text-error">{fieldErrors.status}</p>
-              )}
-            </div>
+            </Field>
 
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Inspection note (required for RESOLVED / REJECTED)
-              </label>
+            <Field label="Inspection note" error={errors.admin_note}>
               <textarea
-                rows={4}
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="e.g. Investigated with the landlord; payment issue resolved on 12 Sep."
-                className="textarea textarea-bordered w-full"
+                className={`${inputClass} min-h-32`}
+                placeholder="What did the inspection find? (required to resolve/reject)"
+                value={form.admin_note}
+                onChange={(e) => setForm({ ...form, admin_note: e.target.value })}
                 disabled={submitting}
               />
-              {fieldErrors.admin_note && (
-                <p className="mt-1 text-xs text-error">{fieldErrors.admin_note}</p>
-              )}
-            </div>
+            </Field>
 
-            <div className="flex gap-2">
-              <button type="submit" className="btn btn-primary btn-sm" disabled={submitting}>
-                {submitting ? "Saving..." : "Save review"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => router.push("/admin/complaints")}
-                disabled={submitting}
-              >
-                Back to list
-              </button>
-            </div>
+            <button type="submit" disabled={submitting} className={`${btnPrimary} w-full`}>
+              {submitting ? "Saving…" : "Save Review"}
+            </button>
           </form>
-        </div>
+
+          <p className="mt-3 text-xs text-gray-400">
+            Validated with Zod — RESOLVED/REJECTED requires a note (mirrors the backend DTO).
+          </p>
+        </section>
       </div>
     </div>
   );

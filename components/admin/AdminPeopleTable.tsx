@@ -1,132 +1,80 @@
-/* ============================================================
-   ADMIN PEOPLE TABLE — components/admin/AdminPeopleTable.tsx
-   ------------------------------------------------------------
-   Reusable table for people lists (landlords / tenants / staff).
+"use client";
 
-   COURSE CONCEPTS:
-   - PROPS: every column value, the meta label, status badges,
-     detail links and (optionally) Edit/Delete action handlers
-     arrive via props — the component holds no data of its own
-     (Task2 props style).
-   - DAISYUI: `table` + `badge` components.
+import type { ReactNode } from "react";
+import { btnGhost, thClass, tdClass } from "@/lib/adminUi";
 
-   Used by the client manager components: when onEdit/onDelete
-   are provided, Edit/Delete buttons appear next to View.
-   ============================================================ */
-
-import Link from "next/link";
-
-// One normalized row — each manager maps its API data into
-// this simple shape and passes it down as props.
-export type AdminPeopleRow = {
-  id: number;
-  name: string;
-  email: string;
-  meta?: string;
-  status: string;
-  footer?: string;
-  detailHref: string;
+type AdminPeopleTableProps<T> = {
+  columns: string[];
+  rows: T[];
+  getRowKey: (row: T) => number;
+  renderRow: (row: T) => ReactNode;
+  onEdit?: (row: T) => void;
+  onDelete?: (row: T) => void;
+  emptyMessage?: string;
 };
 
-type AdminPeopleTableProps = {
-  metaLabel: string;
-  rows: AdminPeopleRow[];
-  emptyMessage: string;
-  // Optional CRUD actions (client manager components pass these).
-  onEdit?: (row: AdminPeopleRow) => void;
-  onDelete?: (row: AdminPeopleRow) => void;
-};
-
-// Status -> DaisyUI badge color.
-function statusBadgeClass(status: string): string {
-  const normalized = status.toUpperCase();
-  if (normalized === "APPROVED" || normalized === "ACTIVE") return "badge-success";
-  if (normalized === "PENDING") return "badge-warning";
-  if (normalized === "REJECTED" || normalized === "INACTIVE") return "badge-error";
-  return "badge-ghost";
-}
-
-export default function AdminPeopleTable({
-  metaLabel,
+export default function AdminPeopleTable<T>({
+  columns,
   rows,
-  emptyMessage,
+  getRowKey,
+  renderRow,
   onEdit,
   onDelete,
-}: AdminPeopleTableProps) {
-  if (rows.length === 0) {
-    return (
-      <div className="card border border-base-300 bg-white shadow-sm">
-        <div className="card-body items-center text-center">
-          <p className="text-sm text-gray-500">{emptyMessage}</p>
-        </div>
-      </div>
-    );
-  }
-
+  emptyMessage = "No records found.",
+}: AdminPeopleTableProps<T>) {
   return (
-    <div className="card border border-base-300 bg-white shadow-sm">
-      <div className="overflow-x-auto">
-        {/* DaisyUI table */}
-        <table className="table">
-          <thead>
-            <tr className="text-xs uppercase text-gray-500">
-              <th>Name</th>
-              <th>Email</th>
-              <th>{metaLabel}</th>
-              <th>Status</th>
-              <th className="text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>
-                  <p className="font-semibold">{row.name}</p>
-                  {row.footer && (
-                    <p className="text-[11px] text-gray-400">{row.footer}</p>
-                  )}
-                </td>
-                <td className="text-sm text-gray-600">{row.email}</td>
-                <td className="text-sm text-gray-600">{row.meta ?? "-"}</td>
-                <td>
-                  <span className={`badge badge-sm ${statusBadgeClass(row.status)}`}>
-                    {row.status}
-                  </span>
-                </td>
-                <td className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {/* Link to the dynamic detail route /admin/<role>/[id] */}
-                    <Link
-                      href={row.detailHref}
-                      className="btn btn-ghost btn-xs text-dwellix-500"
-                    >
-                      View
-                    </Link>
-
-                    {/* Optional Edit/Delete actions (props-driven) */}
-                    {onEdit && (
-                      <button
-                        className="btn btn-ghost btn-xs"
-                        onClick={() => onEdit(row)}
-                      >
-                        Edit
-                      </button>
-                    )}
-                    {onDelete && (
-                      <button
-                        className="btn btn-ghost btn-xs text-error"
-                        onClick={() => onDelete(row)}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            {columns.map((column) => (
+              <th key={column} className={thClass}>
+                {column}
+              </th>
             ))}
-          </tbody>
-        </table>
-      </div>
+            {/* Actions column only exists when handlers are provided */}
+            {(onEdit || onDelete) && <th className={thClass}>Actions</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {rows.length === 0 ? (
+            <tr>
+              <td
+                colSpan={columns.length + 1}
+                className="px-4 py-10 text-center text-sm text-gray-400"
+              >
+                {emptyMessage}
+              </td>
+            </tr>
+          ) : (
+            rows.map((row) => (
+              <tr key={getRowKey(row)} className="transition hover:bg-gray-50">
+                {renderRow(row)}
+                {(onEdit || onDelete) && (
+                  <td className={tdClass}>
+                    <div className="flex gap-1">
+                      {onEdit && (
+                        <button type="button" onClick={() => onEdit(row)} className={btnGhost}>
+                          Edit
+                        </button>
+                      )}
+                      {onDelete && (
+                        <button
+                          type="button"
+                          onClick={() => onDelete(row)}
+                          className={`${btnGhost} text-red-600 hover:bg-red-50 hover:text-red-700`}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

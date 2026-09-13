@@ -1,29 +1,24 @@
-import AdminPageHeader from "@/components/admin/AdminPageHeader";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getAdminSession } from "@/lib/adminAuth";
-import { getAdminDetail, personSchema } from "@/lib/adminPeople";
+import Link from "next/link";
+import { fetchPeopleDetail, landlordSchema } from "@/lib/adminPeople";
+import { AdminBadge } from "@/lib/adminUi";
 
 /* ============================================================
-   LANDLORD DETAIL — app/admin/landlords/[id]/page.tsx
+   LANDLORD DETAIL — app/admin/landlords/[id]/page.tsx  (SSR)
    ------------------------------------------------------------
    COURSE CONCEPTS DEMONSTRATED IN THIS FILE:
 
-   1. DYNAMIC ROUTING + DYNAMIC RENDERING — the [id] folder
-      makes /admin/landlords/1, /admin/landlords/2, ... render
-      through this one page. Because it reads COOKIES and
-      fetches per-request, Next.js renders it DYNAMICALLY on
-      every request (SSR) — appropriate for private, user-
-      specific data (course table: "Authenticated account page
-      -> SSR"). No generateStaticParams: we do not want pre-
-      built copies of private data at build time.
+   1. DYNAMIC ROUTING — the [id] folder makes this ONE page
+      serve /admin/landlords/1, /admin/landlords/2, … The
+      route parameter arrives as `params` (awaited — Next.js
+      15/16 style) and is used to build the backend URL.
 
-   2. notFound() + not-found.tsx — an invalid id (404 from the
-      backend) triggers Next's notFound(), which renders the
-      nearest not-found.tsx (course requirement).
+   2. SSR — async Server Component: the server fetches
+      GET /admin/landlord/find/:id with Axios + cookie JWT and
+      validates it with Zod BEFORE rendering.
 
-   3. AXIOS + ZOD — same server-side data layer
-      (lib/adminPeople.ts) as the list pages.
+   3. not-found handling — an unknown id triggers Next.js's
+      notFound(), which renders the nearest not-found.tsx.
    ============================================================ */
 
 export default async function LandlordDetailPage({
@@ -31,75 +26,67 @@ export default async function LandlordDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  // Next 15/16: params is a Promise -> await it.
   const { id } = await params;
 
-  // AUTH first (SSR, cookie-based).
-  const session = await getAdminSession();
-  if (!session) {
-    return (
-      <AdminPageHeader
-        title="Landlord"
-        subtitle="Please log in as an admin to view this page."
-      />
-    );
-  }
-
-  // SSR fetch of this landlord (Axios + Zod). null = not found.
-  const landlord = await getAdminDetail(
-    `/admin/landlord/find/${id}`,
-    session.token,
-    personSchema,
-  );
-
-  // Invalid id -> render the not-found UI (course requirement).
-  if (!landlord) {
-    notFound();
+  let landlord;
+  try {
+    landlord = await fetchPeopleDetail(`landlord/find/${id}`, landlordSchema);
+  } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND") notFound();
+    throw error;
   }
 
   return (
     <div className="space-y-6">
-      <Link href="/admin/landlords" className="text-sm text-dwellix-500 hover:underline">
-        ← Back to Landlords
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">{landlord.name}</h1>
+          <p className="mt-1 text-sm text-gray-500">Landlord #{landlord.id}</p>
+        </div>
+        <Link
+          href="/admin/landlords"
+          className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 transition hover:border-gray-900"
+        >
+          ← All landlords
+        </Link>
+      </div>
 
-      <AdminPageHeader
-        title={landlord.name}
-        subtitle={`Landlord #${landlord.id}`}
-      />
-
-      {/* Info cards (DaisyUI card components) */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="card-body">
-            <h3 className="card-title text-base">Contact</h3>
-            <p className="text-sm">
-              <span className="text-gray-400">Email:</span> {landlord.email}
-            </p>
-            <p className="text-sm">
-              <span className="text-gray-400">Phone:</span> {landlord.phone}
-            </p>
-            <p className="text-sm">
-              <span className="text-gray-400">Status:</span>{" "}
-              <span className="badge badge-sm badge-success">{landlord.status}</span>
-            </p>
-          </div>
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Profile</h2>
+          <AdminBadge status={landlord.status ?? "active"} />
         </div>
 
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="card-body">
-            <h3 className="card-title text-base">Account</h3>
-            <p className="text-sm">
-              <span className="text-gray-400">Created:</span>{" "}
+        <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">Email</dt>
+            <dd className="mt-1 text-sm text-gray-800">{landlord.email}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">Phone</dt>
+            <dd className="mt-1 text-sm text-gray-800">{landlord.phone}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">Property</dt>
+            <dd className="mt-1 text-sm text-gray-800">
+              {landlord.property
+                ? `Unit ${landlord.property.unit_number ?? landlord.property.id}`
+                : "No property assigned"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+              Created By
+            </dt>
+            <dd className="mt-1 text-sm text-gray-800">{landlord.created_by?.name ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-400">Joined</dt>
+            <dd className="mt-1 text-sm text-gray-800">
               {new Date(landlord.created_at).toLocaleString()}
-            </p>
-            <p className="text-sm">
-              <span className="text-gray-400">Created by:</span>{" "}
-              {landlord.created_by?.name ?? "unknown"} (admin #
-              {landlord.created_by?.id ?? "-"})
-            </p>
+            </dd>
           </div>
-        </div>
+        </dl>
       </div>
     </div>
   );

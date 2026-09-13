@@ -1,26 +1,6 @@
-/* ============================================================
-   ADMIN PAGE HEADER (Server Component)
-   ------------------------------------------------------------
-   • Reusable "page hero" that sits at the top of every admin
-     page: title + subtitle on the left, action button on the
-     right (all provided via PROPS by each page).
-   • Visual design follows the "page-hero" blocks of
-     Admin-FIXED.html.
-   ============================================================ */
+type AdminPageHeaderProps = { title: string; subtitle: string; actionLabel?: string; actionHref?: string;};
 
-type AdminPageHeaderProps = {
-  title: string;
-  subtitle: string;
-  actionLabel?: string;
-  actionHref?: string;
-};
-
-export default function AdminPageHeader({
-  title,
-  subtitle,
-  actionLabel,
-  actionHref,
-}: AdminPageHeaderProps) {
+export default function AdminPageHeader({ title, subtitle, actionLabel, actionHref,}: AdminPageHeaderProps) {
   return (
     <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
@@ -28,8 +8,6 @@ export default function AdminPageHeader({
         <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
       </div>
 
-      {/* Optional action button (only rendered when the page passes
-          actionLabel + actionHref via props) */}
       {actionLabel && actionHref && (
         <a href={actionHref} className="btn btn-primary btn-sm">
           {actionLabel}

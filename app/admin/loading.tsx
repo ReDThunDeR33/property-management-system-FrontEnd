@@ -1,7 +1,7 @@
 import AdminStatSkeleton from "@/components/admin/AdminStatSkeleton";
 
 /* ============================================================
-   loading.tsx — app/admin/loading.tsx
+   loading.tsx — app/admin/loading.tsx  (pure Tailwind)
    ------------------------------------------------------------
    Course requirement: "loading" files.
    Next.js automatically shows this file's UI while any page
@@ -14,7 +14,7 @@ export default function AdminLoading() {
   return (
     <div className="space-y-6">
       {/* Skeleton header bar */}
-      <div className="h-16 animate-pulse rounded-lg bg-base-300" />
+      <div className="h-16 animate-pulse rounded-lg bg-gray-200" />
 
       {/* Four skeleton stat cards (reusable component) */}
       <AdminStatSkeleton count={4} />

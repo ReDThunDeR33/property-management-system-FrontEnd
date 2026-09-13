@@ -1,306 +1,240 @@
 "use client";
 
 /* ============================================================
-   ADMIN COMPLAINT CENTER — app/admin/complaints/page.tsx
+   COMPLAINTS PAGE (CSR #2) — pure Tailwind
    ------------------------------------------------------------
    COURSE CONCEPTS DEMONSTRATED IN THIS FILE:
 
-   1. CLIENT-SIDE RENDERING (CSR) — course table:
-      "Search page with filters -> CSR" and "Admin panel -> CSR".
-      This page is the perfect CSR fit: status/type filters and a
-      keyword search box update the list instantly from browser
-      state without reloading the page.
-
-   2. REACT HOOKS:
-      - useState  -> list data, filter selections, search box,
-        loading and error flags.
-      - useEffect -> loads all complaints once on mount.
-
-   3. AXIOS — axios imported directly, backend URL from
-      NEXT_PUBLIC_API_URL in .env.local (course convention).
-      GET /admin/complaint/allcomplaints (initial load)
-      and GET /admin/complaint/search?keyword=... (keyword search
-      with Axios query params — the "Axios GET with parameter"
-      pattern from the course slides). JWT via authHeader().
-      fetch() is never used.
-
-   4. DYNAMIC ROUTING LINKS — each row links to the dynamic
-      detail route /admin/complaints/[id] (Next 15/16 style:
-      id is awaited in that page's params).
-
-   5. DAISYUI — table, select, badge, alert components.
-
-   6. FOLDER-BASED ROUTING — app/admin/complaints/page.tsx.
+   1. CSR — "use client" page: list + filters render in the
+      browser; data arrives via useEffect + Axios after mount.
+   2. React Hooks — useState for list/filter/search state,
+      useEffect for the initial load.
+   3. Axios only — GET /admin/complaint/allcomplaints and
+      GET /admin/complaint/search?keyword=... (JWT cookie).
+   4. Dynamic routing — each row links to /admin/complaints/[id].
    ============================================================ */
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import axios from "axios";
+import Link from "next/link";
 import { authHeader } from "@/lib/getToken";
+import {
+  AdminPageHeader,
+  AdminAlert,
+  AdminBadge,
+  btnPrimary,
+  btnSecondary,
+  inputClass,
+  thClass,
+  tdClass,
+} from "@/lib/adminUi";
 
-// One complaint as returned by the backend (matches the entity).
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+
 type Complaint = {
   id: number;
-  filed_by_type: string;
-  filed_by_id: number;
-  against_type: string;
-  against_id: number | null;
+  title: string;
   description: string;
   status: string;
-  admin_note: string | null;
-  reviewed_by: { id: number; name: string } | null;
+  type?: string | null;
+  filed_by_id?: number | null;
+  reviewed_by?: { id: number; name: string } | null;
   created_at: string;
 };
 
-// Filter options (match the backend enum values).
-const STATUS_OPTIONS = ["PENDING", "IN_PROGRESS", "RESOLVED", "REJECTED"];
-const FILER_OPTIONS = ["LANDLORD", "TENANT", "STAFF"];
+const STATUS_OPTIONS = ["All", "Pending", "In Progress", "Resolved", "Rejected"];
+const FILER_OPTIONS = ["All", "Admin", "Landlord", "Staff", "Tenant"];
 
-// Status -> DaisyUI badge color mapping.
-const STATUS_BADGE: Record<string, string> = {
-  PENDING: "badge-warning",
-  IN_PROGRESS: "badge-info",
-  RESOLVED: "badge-success",
-  REJECTED: "badge-ghost",
-};
-
-export default function AdminComplaintsPage() {
-  // ----- list state (loaded once on mount via useEffect) -----
+export default function ComplaintsPage() {
+  /* ---------- state (hooks) ---------- */
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  // ----- filter + search state (CSR interactivity) -----
+  const [loadFailed, setLoadFailed] = useState(false);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [filerFilter, setFilerFilter] = useState("ALL");
   const [keyword, setKeyword] = useState("");
+  const [searchResults, setSearchResults] = useState<Complaint[] | null>(null);
   const [searching, setSearching] = useState(false);
 
-  /* useEffect: load all complaints once when the page mounts. */
-  useEffect(() => {
-    fetchComplaints();
-  }, []);
-
-  // Axios GET — all complaints (JWT protected route).
-  async function fetchComplaints() {
+  /* ---------- initial load (useEffect + Axios) ---------- */
+  const loadComplaints = async () => {
+    setLoading(true);
+    setLoadFailed(false);
     try {
-      setLoading(true);
-      setError("");
-      const response = await axios.get(
-        process.env.NEXT_PUBLIC_API_URL + "/admin/complaint/allcomplaints",
-        { headers: authHeader() },
-      );
+      const response = await axios.get<Complaint[]>(`${API}/admin/complaint/allcomplaints`, {
+        headers: authHeader(),
+      });
       setComplaints(response.data);
     } catch {
-      setError("Could not load complaints. Is the backend running?");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  /* Keyword search through the backend search endpoint.
-     Demonstrates Axios GET with a query parameter (params option). */
-  async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    loadComplaints();
+  }, []);
 
-    const trimmed = keyword.trim();
-    if (!trimmed) {
-      // empty keyword -> just reload everything
-      fetchComplaints();
+  /* ---------- backend keyword search (Axios query param) ---------- */
+  const runSearch = async () => {
+    if (!keyword.trim()) {
+      setSearchResults(null);
       return;
     }
-
+    setSearching(true);
     try {
-      setSearching(true);
-      setError("");
-      const response = await axios.get(
-        process.env.NEXT_PUBLIC_API_URL + "/admin/complaint/search",
-        {
-          params: { keyword: trimmed }, // Axios query params
-          headers: authHeader(),
-        },
-      );
-      setComplaints(response.data);
+      const response = await axios.get<Complaint[]>(`${API}/admin/complaint/search`, {
+        headers: authHeader(),
+        params: { keyword: keyword.trim() }, // ?keyword=...
+      });
+      setSearchResults(response.data);
     } catch {
-      setError("Search failed. Is the backend running?");
+      setSearchResults([]);
     } finally {
       setSearching(false);
     }
-  }
+  };
 
-  // Clear the search box and reload the full list.
-  function handleClearSearch() {
-    setKeyword("");
-    fetchComplaints();
-  }
-
-  /* Client-side filtering (CSR): status + filer type are applied
-     instantly in the browser from the loaded list. */
-  const filteredComplaints = complaints.filter((complaint) => {
-    const statusOk = statusFilter === "ALL" || complaint.status === statusFilter;
-    const filerOk = filerFilter === "ALL" || complaint.filed_by_type === filerFilter;
+  /* ---------- client-side filtering (CSR instant filters) ---------- */
+  const source = searchResults ?? complaints;
+  const visible = source.filter((c) => {
+    const statusOk = statusFilter === "ALL" || c.status === statusFilter;
+    const filerOk =
+      filerFilter === "ALL" ||
+      (c.filed_by_id !== null && filerFilter === "ADMIN") ||
+      (c.filed_by_id !== null && filerFilter !== "ADMIN");
     return statusOk && filerOk;
   });
 
-  // ---- render -------------------------------------------------
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Complaint Center</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Review, inspect and resolve complaints filed by landlords, tenants and staff.
-        </p>
-      </div>
+      <AdminPageHeader
+        title="Complaint Center"
+        subtitle="Inspect complaints from every role and record your review."
+      />
 
-      {/* Error banner */}
-      {error && (
-        <div className="alert border-base-300 bg-white shadow-sm">
-          <span className="text-sm text-error">{error}</span>
-          <button className="btn btn-xs" onClick={fetchComplaints}>
+      {loadFailed && (
+        <AdminAlert kind="warning">
+          Cannot reach the backend.
+          <button type="button" onClick={loadComplaints} className={`${btnSecondary} ml-3`}>
             Retry
           </button>
+        </AdminAlert>
+      )}
+
+      {/* Filter + search bar (pure Tailwind controls) */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <select
+          className={`${inputClass} w-auto`}
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          {STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>
+              {s === "ALL" ? "All statuses" : s.replace(/_/g, " ")}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className={`${inputClass} w-auto`}
+          value={filerFilter}
+          onChange={(e) => setFilerFilter(e.target.value)}
+        >
+          {FILER_OPTIONS.map((f) => (
+            <option key={f} value={f}>
+              {f === "ALL" ? "All filers" : f.charAt(0) + f.slice(1).toLowerCase()}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex min-w-56 flex-1 gap-2">
+          <input
+            className={inputClass}
+            placeholder="Search complaints by keyword…"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSearch()}
+          />
+          <button type="button" onClick={runSearch} className={btnPrimary}>
+            {searching ? "…" : "Search"}
+          </button>
+          {searchResults !== null && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchResults(null);
+                setKeyword("");
+              }}
+              className={btnSecondary}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Loading skeleton */}
+      {loading && (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-14 animate-pulse rounded-lg bg-gray-100" />
+          ))}
         </div>
       )}
 
-      {/* Filter bar (CSR: instant client-side filtering) */}
-      <div className="card border border-base-300 bg-white shadow-sm">
-        <div className="card-body flex-row flex-wrap items-end gap-4 p-4">
-          {/* Status filter */}
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">
-              Status
-            </label>
-            <select
-              className="select select-bordered select-sm w-40"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="ALL">All statuses</option>
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Filer type filter */}
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-gray-600">
-              Filed by
-            </label>
-            <select
-              className="select select-bordered select-sm w-40"
-              value={filerFilter}
-              onChange={(event) => setFilerFilter(event.target.value)}
-            >
-              <option value="ALL">All roles</option>
-              {FILER_OPTIONS.map((filer) => (
-                <option key={filer} value={filer}>
-                  {filer}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Keyword search (Axios GET with query param) */}
-          <form onSubmit={handleSearch} className="flex items-end gap-2">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Search
-              </label>
-              <input
-                type="text"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-                placeholder="Search descriptions..."
-                className="input input-bordered input-sm w-56"
-              />
-            </div>
-            <button type="submit" className="btn btn-sm" disabled={searching}>
-              {searching ? "Searching..." : "Search"}
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={handleClearSearch}>
-              Clear
-            </button>
-          </form>
+      {/* Empty states */}
+      {!loading && visible.length === 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+          <p className="text-sm text-gray-500">
+            {searchResults !== null
+              ? "No complaints match your search."
+              : "No complaints filed — everything is calm."}
+          </p>
         </div>
-      </div>
+      )}
 
-      {/* List area */}
-      {loading ? (
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="card-body space-y-3">
-            <div className="h-4 w-48 animate-pulse rounded bg-base-300" />
-            <div className="h-4 w-full animate-pulse rounded bg-base-300" />
-            <div className="h-4 w-2/3 animate-pulse rounded bg-base-300" />
-          </div>
-        </div>
-      ) : filteredComplaints.length === 0 ? (
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="card-body items-center text-center">
-            <p className="text-sm text-gray-500">No complaints match the current filters.</p>
-          </div>
-        </div>
-      ) : (
-        <div className="card border border-base-300 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            {/* DaisyUI table */}
-            <table className="table">
-              <thead>
-                <tr className="text-xs uppercase text-gray-500">
-                  <th>#</th>
-                  <th>Filed by</th>
-                  <th>Against</th>
-                  <th>Description</th>
-                  <th>Status</th>
-                  <th>Date</th>
-                  <th className="text-right">Action</th>
+      {/* Complaints table */}
+      {!loading && visible.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className={thClass}>#</th>
+                <th className={thClass}>Title</th>
+                <th className={thClass}>Status</th>
+                <th className={thClass}>Filed</th>
+                <th className={thClass}>Reviewed By</th>
+                <th className={thClass}></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {visible.map((complaint) => (
+                <tr key={complaint.id} className="transition hover:bg-gray-50">
+                  <td className={`${tdClass} font-mono text-xs`}>#{complaint.id}</td>
+                  <td className={`${tdClass} max-w-xs`}>
+                    <p className="truncate font-semibold text-gray-900">{complaint.title}</p>
+                    <p className="truncate text-xs text-gray-500">{complaint.description}</p>
+                  </td>
+                  <td className={tdClass}>
+                    <AdminBadge status={complaint.status} />
+                  </td>
+                  <td className={tdClass}>{new Date(complaint.created_at).toLocaleDateString()}</td>
+                  <td className={tdClass}>{complaint.reviewed_by?.name ?? "—"}</td>
+                  <td className={tdClass}>
+                    {/* Dynamic route link → /admin/complaints/[id] */}
+                    <Link
+                      href={`/admin/complaints/${complaint.id}`}
+                      className="text-xs font-semibold text-dwellix-600 hover:underline"
+                    >
+                      Inspect →
+                    </Link>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filteredComplaints.map((complaint) => (
-                  <tr key={complaint.id}>
-                    <td>{complaint.id}</td>
-                    <td>
-                      <span className="font-semibold">{complaint.filed_by_type}</span>
-                      <span className="text-gray-400"> #{complaint.filed_by_id}</span>
-                    </td>
-                    <td>
-                      <span className="font-semibold">{complaint.against_type}</span>
-                      <span className="text-gray-400">
-                        {complaint.against_id ? ` #${complaint.against_id}` : ""}
-                      </span>
-                    </td>
-                    <td className="max-w-xs">
-                      <p className="line-clamp-1 text-sm text-gray-500">
-                        {complaint.description}
-                      </p>
-                    </td>
-                    {/* DaisyUI badge with per-status color */}
-                    <td>
-                      <span className={`badge badge-sm ${STATUS_BADGE[complaint.status] ?? "badge-ghost"}`}>
-                        {complaint.status}
-                      </span>
-                    </td>
-                    <td className="text-xs text-gray-500">
-                      {new Date(complaint.created_at).toLocaleDateString()}
-                    </td>
-                    {/* Link to the dynamic detail route /admin/complaints/[id] */}
-                    <td className="text-right">
-                      <Link
-                        href={`/admin/complaints/${complaint.id}`}
-                        className="btn btn-ghost btn-xs text-dwellix-500"
-                      >
-                        Inspect →
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
