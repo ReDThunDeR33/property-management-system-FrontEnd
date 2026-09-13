@@ -235,10 +235,25 @@ export default function IssueDetailsPage() {
               </div>
             </div>
 
-            <ResolveIssueButton
-              issueId={issue.id}
-              status={issue.status}
-            />
+          {issue.status !== "RESOLVED" ? (
+  <ResolveIssueButton
+    issueId={issue.id}
+    onResolved={() => {
+      setIssue((currentIssue) =>
+        currentIssue
+          ? {
+              ...currentIssue,
+              status: "RESOLVED",
+            }
+          : currentIssue,
+      );
+    }}
+  />
+) : (
+  <p className="mt-4 text-sm font-medium text-green-600">
+    Issue resolved successfully.
+  </p>
+)}
           </div>
         )}
       </section>
