@@ -1,134 +1,75 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Pusher from "pusher-js";
+import { getPusherClient } from "@/lib/pusher";
 
-type NotificationData = {
-  workOrderId: number;
-  workerName: string;
+type Toast = {
+  id: string;
   message: string;
 };
 
 function getCookie(name: string) {
+  if (typeof document === "undefined") return null;
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
-
   if (parts.length === 2) {
-    return decodeURIComponent(
-      parts.pop()?.split(";").shift() || "",
-    );
+    return decodeURIComponent(parts.pop()?.split(";").shift() || "");
   }
-
   return null;
 }
 
 export default function TenantNotifications() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const [notification, setNotification] =
-    useState<NotificationData | null>(null);
-
-  useEffect(function () {
-
+  useEffect(() => {
     const accountType = getCookie("account_type");
-    const userCookie = getCookie("user");
-    const accessToken = getCookie("access_token");
+    const userData = getCookie("user");
+    if (accountType !== "tenant" || !userData) return;
 
-    if (
-      accountType !== "tenant" ||
-      !userCookie ||
-      !accessToken
-    ) {
-      return;
-    }
-
-    let user;
-
+    let tenantId: number | null = null;
     try {
-      user = JSON.parse(userCookie);
-    } catch (error) {
-      console.error("Could not read user cookie");
+      tenantId = JSON.parse(userData)?.id ?? null;
+    } catch {
       return;
     }
+    if (!tenantId) return;
 
-    if (!user.id) {
-      return;
-    }
+    const pusher = getPusherClient();
+    if (!pusher) return;
 
-    const pusher = new Pusher(
-      process.env.NEXT_PUBLIC_PUSHER_KEY!,
-      {
-        cluster:
-          process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
-
-        channelAuthorization: {
-          endpoint:
-            `${process.env.NEXT_PUBLIC_API_URL}/pusher/auth`,
-
-          transport: "ajax",
-
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        },
-      },
-    );
-
-    const channelName =
-      `private-tenant-${user.id}`;
-
-    const channel =
-      pusher.subscribe(channelName);
+    const channel = pusher.subscribe(`tenant-${tenantId}`);
 
     channel.bind(
-      "work-order-assigned",
-      function (data: NotificationData) {
-
-        console.log(
-          "Notification received:",
-          data,
-        );
-
-        setNotification(data);
-
-        setTimeout(function () {
-          setNotification(null);
-        }, 5000);
-      },
+      "tenant-status-changed",
+      (data: { status: "APPROVED" | "REJECTED"; propertyUnit?: string | null }) => {
+        const id = crypto.randomUUID();
+        const message =
+          data.status === "APPROVED"
+            ? `Your tenancy was approved${data.propertyUnit ? ` for unit ${data.propertyUnit}` : ""}.`
+            : "Your tenancy application was rejected.";
+        setToasts((prev) => [...prev, { id, message }]);
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, 6000);
+      }
     );
 
-    return function () {
-      channel.unbind("work-order-assigned");
-      pusher.unsubscribe(channelName);
-      pusher.disconnect();
+    return () => {
+      channel.unbind_all();
+      pusher.unsubscribe(`tenant-${tenantId}`);
     };
-
   }, []);
 
-  if (!notification) {
-    return null;
-  }
-
   return (
-    <div className="fixed top-5 right-5 z-[100] w-96 rounded-xl bg-white border border-gray-200 shadow-lg p-5">
-
-      <div className="flex items-start gap-3">
-
-        <div className="text-2xl">
-          🔔
+    <div className="fixed right-5 bottom-5 z-[80] flex flex-col gap-2">
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className="min-w-[240px] max-w-[340px] rounded-xl bg-green-600 px-4 py-3 text-sm text-white shadow-lg"
+        >
+          {toast.message}
         </div>
-
-        <div>
-          <p className="font-semibold">
-            Work Order Assigned
-          </p>
-
-          <p className="text-sm text-gray-600 mt-1">
-            {notification.message}
-          </p>
-        </div>
-
-      </div>
-
+      ))}
     </div>
   );
 }

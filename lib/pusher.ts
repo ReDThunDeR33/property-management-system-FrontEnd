@@ -1,40 +1,20 @@
-"use client";
+import Pusher from "pusher-js";
 
-/* ============================================================
-   PUSHER CLIENT (browser side of the real-time feature)
-   ------------------------------------------------------------
-   PusherJS (pusher-js npm package) connects the browser to the
-   Pusher service over WebSockets. The PUBLIC key + cluster are
-   safe to expose to the browser (the app secret stays on the
-   server). Credentials are read from NEXT_PUBLIC_ env vars so
-   the app works normally (without real-time) when they are
-   not configured.
-   ============================================================ */
+let pusherClient: Pusher | null = null;
 
-import PusherClient from "pusher-js";
-
-// Singleton across the whole app (one WebSocket connection).
-let pusherInstance: PusherClient | null = null;
-
-export function getPusherClient(): PusherClient | null {
-  // Only ever run in the browser (client components).
-  if (typeof window === "undefined") return null;
-
-  if (pusherInstance) return pusherInstance;
-
+// Reuses a single Pusher connection across all components in the browser tab.
+export function getPusherClient(): Pusher | null {
   const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
-  const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER ?? "ap1";
+  const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
 
-  if (!key) {
-    // No public key configured -> real-time notifications stay off.
-    console.warn("Pusher public key missing - real-time notifications disabled");
+  if (!key || !cluster) {
+    console.warn("Pusher public key/cluster missing — real-time disabled");
     return null;
   }
 
-  pusherInstance = new PusherClient(key, { cluster });
-  return pusherInstance;
-}
+  if (!pusherClient) {
+    pusherClient = new Pusher(key, { cluster });
+  }
 
-// Shared channel/event names (must match the backend PusherService).
-export const ANNOUNCEMENT_CHANNEL = "announcements";
-export const NEW_ANNOUNCEMENT_EVENT = "new-announcement";
+  return pusherClient;
+}
