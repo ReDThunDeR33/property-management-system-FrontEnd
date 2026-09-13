@@ -22,10 +22,23 @@ const issueSchema = z.object({
   id: z.number(),
   status: z.enum(issueStatuses),
   created_at: z.string(),
+  // property relation returned with the issue
+  property: z
+    .object({
+      id: z.number(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const issueListSchema = z.array(issueSchema);
 type Issue = z.infer<typeof issueSchema>;
+
+const propertySchema = z.object({
+  id: z.number(),
+});
+const propertyListSchema = z.array(propertySchema);
+type Property = z.infer<typeof propertySchema>;
 
 const statusStyle: Record<string, string> = {
   OPEN: "bg-yellow-50 text-yellow-600",
@@ -45,6 +58,19 @@ export default function IssuesPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
+  const [landlordId, setLandlordId] = useState<number | null>(null);
+
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [propertiesLoading, setPropertiesLoading] = useState(true);
+  const [propertiesError, setPropertiesError] = useState("");
+
+  const [description, setDescription] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+
   useEffect(() => {
     const fetchIssues = async () => {
       setLoading(true);
@@ -54,24 +80,28 @@ export default function IssuesPage() {
       if (!userData) {
         setErrorMessage("You are not logged in.");
         setLoading(false);
+        setPropertiesLoading(false);
         return;
       }
 
-      let landlordId: number | null = null;
+      let parsedLandlordId: number | null = null;
       try {
-        landlordId = JSON.parse(userData)?.id ?? null;
+        parsedLandlordId = JSON.parse(userData)?.id ?? null;
       } catch (err) {
         console.error("Error parsing user cookie:", err);
       }
 
-      if (!landlordId) {
+      if (!parsedLandlordId) {
         setErrorMessage("Could not find landlord id.");
         setLoading(false);
+        setPropertiesLoading(false);
         return;
       }
 
+      setLandlordId(parsedLandlordId);
+
       try {
-        const response = await api.get(`/landlord/issues/${landlordId}`);
+        const response = await api.get(`/landlord/issues/${parsedLandlordId}`);
         const result = issueListSchema.safeParse(response.data);
 
         if (!result.success) {
@@ -99,10 +129,109 @@ export default function IssuesPage() {
       } finally {
         setLoading(false);
       }
+
+      try {
+        setPropertiesLoading(true);
+        setPropertiesError("");
+        const propRes = await api.get(`/landlord/properties/${parsedLandlordId}`);
+        const propResult = propertyListSchema.safeParse(propRes.data);
+
+        if (!propResult.success) {
+          setPropertiesError("Property data came back in an unexpected shape.");
+          return;
+        }
+
+        setProperties(propResult.data);
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          const backendMessage = error.response?.data?.message;
+          if (Array.isArray(backendMessage)) {
+            setPropertiesError(backendMessage[0]);
+          } else if (typeof backendMessage === "string") {
+            setPropertiesError(backendMessage);
+          } else if (!error.response) {
+            setPropertiesError("Cannot connect to the backend");
+          } else {
+            setPropertiesError("Could not load properties");
+          }
+        } else {
+          setPropertiesError("Something went wrong");
+        }
+      } finally {
+        setPropertiesLoading(false);
+      }
     };
 
     fetchIssues();
   }, []);
+
+  const handleCreateIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError("");
+    setCreateSuccess("");
+
+    if (!landlordId) {
+      setCreateError("Could not find landlord id.");
+      return;
+    }
+
+    if (!description.trim()) {
+      setCreateError("Description is required.");
+      return;
+    }
+
+    if (!selectedPropertyId) {
+      setCreateError("Please select a property.");
+      return;
+    }
+
+    setCreating(true);
+
+    try {
+      const payload = {
+        description: description.trim(),
+        image_url: imageUrl.trim() || undefined,
+        property: Number(selectedPropertyId), // matches CreateIssueDto.property
+      };
+
+      const response = await api.post(`/landlord/issues/${landlordId}`, payload);
+
+      const result = issueSchema.safeParse(response.data);
+
+      if (result.success) {
+        setIssues((prev) => [result.data, ...prev]);
+      } else {
+        // fallback: refetch if the POST response shape is unexpected
+        const refreshed = await api.get(`/landlord/issues/${landlordId}`);
+        const refreshedResult = issueListSchema.safeParse(refreshed.data);
+        if (refreshedResult.success) {
+          setIssues(refreshedResult.data);
+        }
+      }
+
+      setCreateSuccess("Issue created successfully.");
+      setDescription("");
+      setImageUrl("");
+      setSelectedPropertyId("");
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const backendMessage = error.response?.data?.message;
+        if (Array.isArray(backendMessage)) {
+          setCreateError(backendMessage[0]);
+        } else if (typeof backendMessage === "string") {
+          setCreateError(backendMessage);
+        } else if (!error.response) {
+          setCreateError("Cannot connect to the backend");
+        } else {
+          setCreateError("Could not create issue");
+        }
+      } else {
+        setCreateError("Something went wrong");
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const filteredIssues =
     statusFilter === "all" ? issues : issues.filter((issue) => issue.status === statusFilter);
@@ -114,6 +243,67 @@ export default function IssuesPage() {
           <p className="text-[#FF5A3D] text-sm mb-2">• ISSUE TRACKING</p>
           <h1 className="text-3xl font-semibold">Reported Issues</h1>
           <p className="text-gray-500 mt-2">Tenants report issues, issues are linked to property and can generate work order.</p>
+        </div>
+
+        {/* Create Issue form */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6 mb-8">
+          <h2 className="font-semibold mb-4">Create Issue</h2>
+          <form onSubmit={handleCreateIssue} className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Property</label>
+              {propertiesLoading ? (
+                <p className="text-gray-500 text-sm">Loading properties...</p>
+              ) : propertiesError ? (
+                <p className="text-red-500 text-sm">{propertiesError}</p>
+              ) : (
+                <select
+                  value={selectedPropertyId}
+                  onChange={(e) => setSelectedPropertyId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Select a property</option>
+                  {properties.map((property) => (
+                    <option key={property.id} value={property.id}>
+                      Property #{property.id}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Description</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="Describe the issue..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Image URL (optional)</label>
+              <input
+                type="text"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="https://..."
+              />
+            </div>
+
+            {createError && <p className="text-red-500 text-sm">{createError}</p>}
+            {createSuccess && <p className="text-green-600 text-sm">{createSuccess}</p>}
+
+            <button
+              type="submit"
+              disabled={creating}
+              className="text-sm px-4 py-2 rounded-lg bg-[#FF5A3D] text-white disabled:opacity-50"
+            >
+              {creating ? "Creating..." : "Create Issue"}
+            </button>
+          </form>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-6">
@@ -158,6 +348,9 @@ export default function IssuesPage() {
                     {statusLabel[issue.status]}
                   </span>
                 </div>
+                <p className="text-gray-500 text-xs mt-2">
+                  {issue.property?.id ? `Property #${issue.property.id}` : "No property linked"}
+                </p>
                 <p className="text-gray-400 text-xs mt-3">
                   Reported {new Date(issue.created_at).toLocaleDateString()}
                 </p>
