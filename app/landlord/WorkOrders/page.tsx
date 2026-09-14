@@ -7,38 +7,38 @@ import { z } from "zod";
 import Layout from "../Components/Layout";
 import api from "../../../lib/axios";
 
+/* =========================================================
+   COOKIE
+========================================================= */
+
 function getCookie(name: string) {
   if (typeof document === "undefined") {
     return null;
   }
 
   const value = `; ${document.cookie}`;
-  const parts = value.split(`; ${name}=`);
+  const parts = value.split(
+    `; ${name}=`,
+  );
 
   if (parts.length === 2) {
     return decodeURIComponent(
-      parts.pop()?.split(";").shift() || ""
+      parts.pop()?.split(";").shift() ||
+        "",
     );
   }
 
   return null;
 }
 
-/* =========================
+/* =========================================================
    WORK ORDER
-========================= */
-
-const workOrderStatuses = [
-  "pending",
-  "assigned",
-  "tenant_confirmed",
-  "complete",
-] as const;
+========================================================= */
 
 const workOrderSchema = z.object({
   id: z.number(),
 
-  status: z.enum(workOrderStatuses),
+  status: z.string(),
 
   created_at: z.string(),
 
@@ -68,9 +68,9 @@ type WorkOrder = z.infer<
   typeof workOrderSchema
 >;
 
-/* =========================
+/* =========================================================
    TRANSACTION
-========================= */
+========================================================= */
 
 const transactionSchema = z.object({
   id: z.number(),
@@ -84,7 +84,12 @@ const transactionSchema = z.object({
 
   status: z.string(),
 
-  payer_type: z.string().optional(),
+  payer_type: z
+    .enum([
+      "landlord",
+      "tenant",
+    ])
+    .optional(),
 
   created_at: z.string(),
 
@@ -108,9 +113,33 @@ type Transaction = z.infer<
   typeof transactionSchema
 >;
 
-/* =========================
-   STATUS STYLE
-========================= */
+/* =========================================================
+   DUPLICATES
+========================================================= */
+
+function removeDuplicateTransactions(
+  list: Transaction[],
+): Transaction[] {
+  const seen = new Set<number>();
+
+  return list.filter(
+    (transaction) => {
+      if (
+        seen.has(transaction.id)
+      ) {
+        return false;
+      }
+
+      seen.add(transaction.id);
+
+      return true;
+    },
+  );
+}
+
+/* =========================================================
+   STATUS
+========================================================= */
 
 const statusStyle: Record<
   string,
@@ -143,9 +172,16 @@ const statusLabel: Record<
   complete: "Complete",
 };
 
-/* =========================
+const workOrderStatuses = [
+  "pending",
+  "assigned",
+  "tenant_confirmed",
+  "complete",
+];
+
+/* =========================================================
    PAGE
-========================= */
+========================================================= */
 
 export default function WorkOrdersPage() {
   const [workOrders, setWorkOrders] =
@@ -161,25 +197,28 @@ export default function WorkOrdersPage() {
     useState("");
 
   const [statusFilter, setStatusFilter] =
-    useState<string>("all");
+    useState("all");
 
-  const [payingId, setPayingId] =
-    useState<number | null>(null);
+  const [
+    creatingPaymentId,
+    setCreatingPaymentId,
+  ] = useState<number | null>(null);
 
-  /* =========================
-     FETCH WORK ORDERS + TRANSACTIONS
-  ========================= */
+  /* =======================================================
+     FETCH
+  ======================================================= */
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setErrorMessage("");
 
-      const userData = getCookie("user");
+      const userData =
+        getCookie("user");
 
       if (!userData) {
         setErrorMessage(
-          "You are not logged in."
+          "You are not logged in.",
         );
 
         setLoading(false);
@@ -191,17 +230,18 @@ export default function WorkOrdersPage() {
 
       try {
         landlordId =
-          JSON.parse(userData)?.id ?? null;
+          JSON.parse(
+            userData,
+          )?.id ?? null;
       } catch (error) {
         console.error(
-          "Error parsing user cookie:",
-          error
+          error,
         );
       }
 
       if (!landlordId) {
         setErrorMessage(
-          "Could not find landlord id."
+          "Could not find landlord id.",
         );
 
         setLoading(false);
@@ -210,107 +250,103 @@ export default function WorkOrdersPage() {
 
       try {
         /*
-          Fetch both at the same time.
-        */
+         * Get work orders and transactions
+         * at the same time.
+         */
 
         const [
           workOrderResponse,
           transactionResponse,
         ] = await Promise.all([
           api.get(
-            `/landlord/workorders/${landlordId}`
+            `/landlord/workorders/${landlordId}`,
           ),
 
           api.get(
-            `/landlord/transactions/${landlordId}`
+            `/landlord/transactions/${landlordId}`,
           ),
         ]);
 
-        /* =========================
+        /* ===============================================
            WORK ORDERS
-        ========================= */
+        =============================================== */
 
         const workOrderResult =
           workOrderListSchema.safeParse(
-            workOrderResponse.data
+            workOrderResponse.data,
           );
 
         if (!workOrderResult.success) {
           console.error(
-            workOrderResult.error
+            workOrderResult.error,
           );
 
           setErrorMessage(
-            "Work order data came back in an unexpected shape."
+            "Work order data came back in an unexpected shape.",
           );
 
-          setLoading(false);
           return;
         }
 
-        /* =========================
+        /* ===============================================
            TRANSACTIONS
-        ========================= */
+        =============================================== */
 
         const transactionResult =
           transactionListSchema.safeParse(
-            transactionResponse.data
+            transactionResponse.data,
           );
 
         if (!transactionResult.success) {
           console.error(
-            transactionResult.error
+            transactionResult.error,
           );
 
           setErrorMessage(
-            "Transaction data came back in an unexpected shape."
+            "Transaction data came back in an unexpected shape.",
           );
 
-          setLoading(false);
           return;
         }
 
         setWorkOrders(
-          workOrderResult.data
+          workOrderResult.data,
         );
 
         setTransactions(
-          transactionResult.data
+          removeDuplicateTransactions(
+            transactionResult.data,
+          ),
         );
       } catch (error) {
-        if (axios.isAxiosError(error)) {
-          const backendMessage =
-            error.response?.data?.message;
+        if (
+          axios.isAxiosError(error)
+        ) {
+          const message =
+            error.response?.data
+              ?.message;
 
           if (
-            Array.isArray(
-              backendMessage
-            )
+            Array.isArray(message)
           ) {
             setErrorMessage(
-              backendMessage[0]
+              message[0],
             );
           } else if (
-            typeof backendMessage ===
+            typeof message ===
             "string"
           ) {
             setErrorMessage(
-              backendMessage
-            );
-          } else if (
-            !error.response
-          ) {
-            setErrorMessage(
-              "Cannot connect to the backend."
+              message,
             );
           } else {
             setErrorMessage(
-              "Could not load work orders."
+              "Could not load work orders.",
             );
           }
         } else {
           setErrorMessage(
-            "Something went wrong."
+            "Something went wrong.",
           );
         }
       } finally {
@@ -321,286 +357,211 @@ export default function WorkOrdersPage() {
     fetchData();
   }, []);
 
-  /* =========================
-     FIND TRANSACTION FOR WORK ORDER
-  ========================= */
+  /* =======================================================
+     FIND WORK ORDER TRANSACTION
+  ======================================================= */
 
-  const getWorkOrderTransaction = (
-    workOrderId: number
-  ) => {
-    return transactions.find(
-      (transaction) =>
-        transaction.work_order_id?.id ===
-        workOrderId
-    );
-  };
-
-  /* =========================
-     CREATE WORK ORDER PAYMENT
-  ========================= */
-
-  const handleCreatePayment = async (
-    workOrder: WorkOrder
-  ) => {
-    const userData = getCookie("user");
-
-    if (!userData) {
-      setErrorMessage(
-        "You are not logged in."
+  const getWorkOrderTransaction =
+    (workOrderId: number) => {
+      return transactions.find(
+        (transaction) =>
+          transaction.work_order_id
+            ?.id === workOrderId &&
+          transaction.type ===
+            "work_order_cost",
       );
-      return;
-    }
+    };
 
-    let landlordId: number | null =
-      null;
+  /* =======================================================
+     CREATE PAYMENT
+  ======================================================= */
 
-    try {
-      landlordId =
-        JSON.parse(userData)?.id ?? null;
-    } catch (error) {
-      console.error(error);
+  const handleCreatePayment =
+    async (
+      workOrder: WorkOrder,
+    ) => {
+      const userData =
+        getCookie("user");
 
-      setErrorMessage(
-        "Could not find landlord id."
-      );
-
-      return;
-    }
-
-    if (!landlordId) {
-      setErrorMessage(
-        "Could not find landlord id."
-      );
-
-      return;
-    }
-
-    /*
-      Calculate the total from the
-      work order costs.
-    */
-
-    const laborCost = Number(
-      workOrder.labor_cost ?? 0
-    );
-
-    const materialsCost = Number(
-      workOrder.materials_cost ?? 0
-    );
-
-    const additionalCost = Number(
-      workOrder.additional_cost ?? 0
-    );
-
-    const totalCost =
-      laborCost +
-      materialsCost +
-      additionalCost;
-
-    if (totalCost <= 0) {
-      setErrorMessage(
-        "This work order has no payment required."
-      );
-
-      return;
-    }
-
-    try {
-      setPayingId(workOrder.id);
-      setErrorMessage("");
-
-      /*
-        IMPORTANT:
-
-        This endpoint should create a
-        work_order_cost transaction.
-
-        Backend:
-        POST
-        /landlord/work-order/transaction/:landlordId/:workOrderId
-      */
-
-      const response = await api.post(
-        `/landlord/work-order/transaction/${landlordId}/${workOrder.id}`
-      );
-
-      const result =
-        transactionSchema.safeParse(
-          response.data
-        );
-
-      if (!result.success) {
-        console.error(
-          result.error
-        );
-
+      if (!userData) {
         setErrorMessage(
-          "Payment transaction was created but returned invalid data."
+          "You are not logged in.",
         );
 
         return;
       }
 
-      /*
-        Add newly-created transaction
-        to the transaction list.
-      */
+      let landlordId: number | null =
+        null;
 
-      setTransactions((prev) => [
-        result.data,
-        ...prev,
-      ]);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const backendMessage =
-          error.response?.data?.message;
-
-        if (
-          Array.isArray(
-            backendMessage
-          )
-        ) {
-          setErrorMessage(
-            backendMessage[0]
-          );
-        } else if (
-          typeof backendMessage ===
-          "string"
-        ) {
-          setErrorMessage(
-            backendMessage
-          );
-        } else {
-          setErrorMessage(
-            "Could not create payment transaction."
-          );
-        }
-      } else {
-        setErrorMessage(
-          "Something went wrong."
-        );
-      }
-    } finally {
-      setPayingId(null);
-    }
-  };
-
-  /* =========================
-     PAY WORK ORDER
-  ========================= */
-
-  const handlePayment = async (
-    workOrderId: number
-  ) => {
-    const userData = getCookie("user");
-
-    if (!userData) {
-      setErrorMessage(
-        "You are not logged in."
-      );
-
-      return;
-    }
-
-    let landlordId: number | null =
-      null;
-
-    try {
-      landlordId =
-        JSON.parse(userData)?.id ?? null;
-    } catch (error) {
-      console.error(error);
-
-      setErrorMessage(
-        "Could not find landlord id."
-      );
-
-      return;
-    }
-
-    if (!landlordId) {
-      setErrorMessage(
-        "Could not find landlord id."
-      );
-
-      return;
-    }
-
-    try {
-      setPayingId(workOrderId);
-      setErrorMessage("");
-
-      const response = await api.post(
-        `/landlord/work-order/pay/${landlordId}/${workOrderId}`
-      );
-
-      const result =
-        transactionSchema.safeParse(
-          response.data
-        );
-
-      if (!result.success) {
+      try {
+        landlordId =
+          JSON.parse(
+            userData,
+          )?.id ?? null;
+      } catch (error) {
         console.error(
-          result.error
+          error,
         );
 
         setErrorMessage(
-          "Payment completed but returned invalid data."
+          "Could not find landlord id.",
         );
 
         return;
       }
 
-      /*
-        Update the transaction in state.
-      */
+      if (!landlordId) {
+        setErrorMessage(
+          "Could not find landlord id.",
+        );
 
-      setTransactions((prev) =>
-        prev.map((transaction) =>
-          transaction.id ===
-          result.data.id
-            ? result.data
-            : transaction
-        )
-      );
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const backendMessage =
-          error.response?.data?.message;
+        return;
+      }
 
+      const laborCost =
+        Number(
+          workOrder.labor_cost ??
+            0,
+        );
+
+      const materialsCost =
+        Number(
+          workOrder.materials_cost ??
+            0,
+        );
+
+      const additionalCost =
+        Number(
+          workOrder.additional_cost ??
+            0,
+        );
+
+      const totalCost =
+        laborCost +
+        materialsCost +
+        additionalCost;
+
+      if (totalCost <= 0) {
+        setErrorMessage(
+          "This work order has no payment required.",
+        );
+
+        return;
+      }
+
+      try {
+        setCreatingPaymentId(
+          workOrder.id,
+        );
+
+        setErrorMessage("");
+
+        /*
+         * If a transaction already exists,
+         * do not create another one.
+         */
+
+        const existingTransaction =
+          getWorkOrderTransaction(
+            workOrder.id,
+          );
+
+        if (existingTransaction) {
+          setErrorMessage(
+            `Payment transaction #${existingTransaction.id} already exists.`,
+          );
+
+          return;
+        }
+
+        /*
+         * Create transaction.
+         *
+         * The backend saves:
+         * type = work_order_cost
+         * payer_type = landlord
+         * status = pending
+         * created_by_type = landlord
+         */
+
+        await api.post(
+          `/landlord/work-order/transaction/${landlordId}/${workOrder.id}`,
+        );
+
+        /*
+         * VERY IMPORTANT:
+         * Reload transactions from database.
+         */
+
+        const response =
+          await api.get(
+            `/landlord/transactions/${landlordId}`,
+          );
+
+        const result =
+          transactionListSchema.safeParse(
+            response.data,
+          );
+
+        if (!result.success) {
+          console.error(
+            result.error,
+          );
+
+          setErrorMessage(
+            "Payment was created but the transaction list could not be refreshed.",
+          );
+
+          return;
+        }
+
+        setTransactions(
+          removeDuplicateTransactions(
+            result.data,
+          ),
+        );
+      } catch (error) {
         if (
-          Array.isArray(
-            backendMessage
-          )
+          axios.isAxiosError(error)
         ) {
-          setErrorMessage(
-            backendMessage[0]
-          );
-        } else if (
-          typeof backendMessage ===
-          "string"
-        ) {
-          setErrorMessage(
-            backendMessage
-          );
+          const message =
+            error.response?.data
+              ?.message;
+
+          if (
+            Array.isArray(message)
+          ) {
+            setErrorMessage(
+              message[0],
+            );
+          } else if (
+            typeof message ===
+            "string"
+          ) {
+            setErrorMessage(
+              message,
+            );
+          } else {
+            setErrorMessage(
+              "Could not create payment transaction.",
+            );
+          }
         } else {
           setErrorMessage(
-            "Could not complete payment."
+            "Something went wrong.",
           );
         }
-      } else {
-        setErrorMessage(
-          "Something went wrong."
+      } finally {
+        setCreatingPaymentId(
+          null,
         );
       }
-    } finally {
-      setPayingId(null);
-    }
-  };
+    };
 
-  /* =========================
+  /* =======================================================
      FILTER
-  ========================= */
+  ======================================================= */
 
   const filteredWorkOrders =
     statusFilter === "all"
@@ -608,22 +569,23 @@ export default function WorkOrdersPage() {
       : workOrders.filter(
           (workOrder) =>
             workOrder.status ===
-            statusFilter
+            statusFilter,
         );
 
-  /* =========================
+  /* =======================================================
      UI
-  ========================= */
+  ======================================================= */
 
   return (
     <Layout>
       <section>
 
-        {/* =========================
-            HEADER
-        ========================= */}
+        {/* =================================================
+           HEADER
+        ================================================= */}
 
         <div className="mb-8">
+
           <p className="text-[#FF5A3D] text-sm mb-2">
             • MAINTENANCE MANAGEMENT
           </p>
@@ -633,23 +595,27 @@ export default function WorkOrdersPage() {
           </h1>
 
           <p className="text-gray-500 mt-2">
-            Create and track work orders
-            from issues.
+            Create and track work
+            orders from issues.
           </p>
+
         </div>
 
-        {/* =========================
-            FILTER
-        ========================= */}
+        {/* =================================================
+           FILTER
+        ================================================= */}
 
         <div className="flex flex-wrap gap-2 mb-6">
 
           <button
             onClick={() =>
-              setStatusFilter("all")
+              setStatusFilter(
+                "all",
+              )
             }
             className={`text-xs px-3 py-1.5 rounded-full border ${
-              statusFilter === "all"
+              statusFilter ===
+              "all"
                 ? "bg-[#FF5A3D] text-white border-[#FF5A3D]"
                 : "border-gray-300 text-gray-600"
             }`}
@@ -659,11 +625,12 @@ export default function WorkOrdersPage() {
 
           {workOrderStatuses.map(
             (status) => (
+
               <button
-                key={status}
+                key={`filter-${status}`}
                 onClick={() =>
                   setStatusFilter(
-                    status
+                    status,
                   )
                 }
                 className={`text-xs px-3 py-1.5 rounded-full border ${
@@ -679,23 +646,29 @@ export default function WorkOrdersPage() {
                   ]
                 }
               </button>
-            )
+
+            ),
           )}
+
         </div>
 
-        {/* =========================
-            ERROR
-        ========================= */}
+        {/* =================================================
+           ERROR
+        ================================================= */}
 
         {errorMessage && (
+
           <div className="mb-6 bg-red-50 border border-red-200 text-red-600 rounded-lg p-3 text-sm">
-            {errorMessage}
+            {
+              errorMessage
+            }
           </div>
+
         )}
 
-        {/* =========================
-            LOADING
-        ========================= */}
+        {/* =================================================
+           LOADING
+        ================================================= */}
 
         {loading && (
           <p className="text-gray-500">
@@ -703,320 +676,343 @@ export default function WorkOrdersPage() {
           </p>
         )}
 
-        {/* =========================
-            EMPTY
-        ========================= */}
+        {/* =================================================
+           EMPTY
+        ================================================= */}
 
         {!loading &&
           !errorMessage &&
           filteredWorkOrders.length ===
             0 && (
+
             <p className="text-gray-500">
               No work orders found.
             </p>
+
           )}
 
-        {/* =========================
-            WORK ORDER CARDS
-        ========================= */}
+        {/* =================================================
+           WORK ORDERS
+        ================================================= */}
 
         {!loading &&
           filteredWorkOrders.length >
             0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
 
-              {filteredWorkOrders.map(
-                (workOrder) => {
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
 
-                  /* =========================
-                     COST CALCULATION
-                  ========================= */
+            {filteredWorkOrders.map(
+              (workOrder) => {
 
-                  const laborCost =
-                    Number(
-                      workOrder.labor_cost ??
-                        0
-                    );
+                const laborCost =
+                  Number(
+                    workOrder.labor_cost ??
+                      0,
+                  );
 
-                  const materialsCost =
-                    Number(
-                      workOrder.materials_cost ??
-                        0
-                    );
+                const materialsCost =
+                  Number(
+                    workOrder.materials_cost ??
+                      0,
+                  );
 
-                  const additionalCost =
-                    Number(
-                      workOrder.additional_cost ??
-                        0
-                    );
+                const additionalCost =
+                  Number(
+                    workOrder.additional_cost ??
+                      0,
+                  );
 
-                  const totalCost =
-                    laborCost +
-                    materialsCost +
-                    additionalCost;
+                const totalCost =
+                  laborCost +
+                  materialsCost +
+                  additionalCost;
 
-                  const hasCost =
-                    totalCost > 0;
+                const transaction =
+                  getWorkOrderTransaction(
+                    workOrder.id,
+                  );
 
-                  /* =========================
-                     TRANSACTION
-                  ========================= */
+                const isPending =
+                  transaction?.status ===
+                  "pending";
 
-                  const transaction =
-                    getWorkOrderTransaction(
-                      workOrder.id
-                    );
+                const isPaid =
+                  transaction?.status ===
+                  "paid";
 
-                  const isPending =
-                    transaction?.status ===
-                    "pending";
+                return (
 
-                  const isPaid =
-                    transaction?.status ===
-                    "paid";
+                  <div
+                    key={`work-order-${workOrder.id}`}
+                    className="bg-white border border-gray-200 rounded-xl p-6"
+                  >
 
-                  return (
-                    <div
-                      key={workOrder.id}
-                      className="bg-white border border-gray-200 rounded-xl p-6"
-                    >
+                    {/* =============================
+                        HEADER
+                    ============================= */}
 
-                      {/* =========================
-                          WORK ORDER HEADER
-                      ========================= */}
+                    <div className="flex items-center justify-between">
 
-                      <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">
+                        Work Order #
+                        {
+                          workOrder.id
+                        }
+                      </h3>
 
-                        <h3 className="font-semibold">
-                          Work Order #
-                          {workOrder.id}
-                        </h3>
+                      <span
+                        className={`text-xs px-2 py-1 rounded-full ${
+                          statusStyle[
+                            workOrder.status
+                          ] ??
+                          "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {
+                          statusLabel[
+                            workOrder.status
+                          ] ??
+                          workOrder.status
+                        }
+                      </span>
 
-                        <span
-                          className={`text-xs px-2 py-1 rounded-full ${
-                            statusStyle[
-                              workOrder.status
-                            ]
-                          }`}
-                        >
+                    </div>
+
+                    <p className="text-gray-400 text-xs mt-3">
+                      Created{" "}
+                      {new Date(
+                        workOrder.created_at,
+                      ).toLocaleDateString()}
+                    </p>
+
+                    {/* =============================
+                        COST
+                    ============================= */}
+
+                    <div className="border-t border-gray-100 mt-5 pt-5">
+
+                      <p className="text-sm font-medium mb-3">
+                        Work Order Cost
+                      </p>
+
+                      <div className="flex justify-between text-sm mt-2">
+
+                        <span className="text-gray-500">
+                          Labor Cost
+                        </span>
+
+                        <span>
+                          $
                           {
-                            statusLabel[
-                              workOrder.status
-                            ]
+                            laborCost.toLocaleString()
                           }
                         </span>
 
                       </div>
 
-                      <p className="text-gray-400 text-xs mt-3">
-                        Created{" "}
-                        {new Date(
-                          workOrder.created_at
-                        ).toLocaleDateString()}
-                      </p>
+                      <div className="flex justify-between text-sm mt-2">
 
-                      {/* =========================
-                          COST SECTION
-                      ========================= */}
+                        <span className="text-gray-500">
+                          Materials Cost
+                        </span>
 
-                      <div className="border-t border-gray-100 mt-5 pt-5">
-
-                        <p className="text-sm font-medium mb-3">
-                          Work Order Cost
-                        </p>
-
-                        <div className="flex justify-between text-sm mt-2">
-                          <span className="text-gray-500">
-                            Labor Cost
-                          </span>
-
-                          <span>
-                            $
-                            {laborCost.toLocaleString()}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between text-sm mt-2">
-                          <span className="text-gray-500">
-                            Materials Cost
-                          </span>
-
-                          <span>
-                            $
-                            {materialsCost.toLocaleString()}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between text-sm mt-2">
-                          <span className="text-gray-500">
-                            Additional Cost
-                          </span>
-
-                          <span>
-                            $
-                            {additionalCost.toLocaleString()}
-                          </span>
-                        </div>
-
-                        <div className="border-t border-gray-100 mt-3 pt-3 flex justify-between">
-
-                          <span className="font-semibold">
-                            Total Cost
-                          </span>
-
-                          <span className="font-semibold">
-                            $
-                            {totalCost.toLocaleString()}
-                          </span>
-
-                        </div>
+                        <span>
+                          $
+                          {
+                            materialsCost.toLocaleString()
+                          }
+                        </span>
 
                       </div>
 
-                      {/* =========================
-                          PAYMENT SECTION
-                      ========================= */}
+                      <div className="flex justify-between text-sm mt-2">
 
-                      <div className="border-t border-gray-100 mt-5 pt-5">
+                        <span className="text-gray-500">
+                          Additional Cost
+                        </span>
 
-                        <p className="text-sm font-medium mb-3">
-                          Payment
-                        </p>
-
-                        {/* NO COST */}
-
-                        {!hasCost && (
-                          <div className="bg-gray-50 text-gray-500 rounded-lg p-3 text-sm text-center">
-                            No payment required
-                          </div>
-                        )}
-
-                        {/* COST EXISTS BUT
-                            NO TRANSACTION */}
-
-                        {hasCost &&
-                          !transaction && (
-                            <div>
-
-                              <div className="bg-blue-50 border border-blue-100 text-blue-600 rounded-lg p-3 text-sm">
-
-                                <p className="font-medium">
-                                  Payment Found
-                                </p>
-
-                                <p className="mt-1">
-                                  Total amount: $
-                                  {totalCost.toLocaleString()}
-                                </p>
-
-                              </div>
-
-                              <button
-                                onClick={() =>
-                                  handleCreatePayment(
-                                    workOrder
-                                  )
-                                }
-                                disabled={
-                                  payingId ===
-                                  workOrder.id
-                                }
-                                className="w-full mt-3 bg-[#FF5A3D] text-white py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
-                              >
-                                {payingId ===
-                                workOrder.id
-                                  ? "Creating Payment..."
-                                  : "Create Payment"}
-                              </button>
-
-                            </div>
-                          )}
-
-                        {/* TRANSACTION EXISTS
-                            AND PENDING */}
-
-                        {hasCost &&
-                          transaction &&
-                          isPending && (
-                            <div>
-
-                              <div className="bg-yellow-50 border border-yellow-100 text-yellow-700 rounded-lg p-3 text-sm">
-
-                                <p className="font-medium">
-                                  Payment Pending
-                                </p>
-
-                                <p className="mt-1">
-                                  Amount: $
-                                  {Number(
-                                    transaction.amount
-                                  ).toLocaleString()}
-                                </p>
-
-                              </div>
-
-                              <button
-                                onClick={() =>
-                                  handlePayment(
-                                    workOrder.id
-                                  )
-                                }
-                                disabled={
-                                  payingId ===
-                                  workOrder.id
-                                }
-                                className="w-full mt-3 bg-[#FF5A3D] text-white py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
-                              >
-                                {payingId ===
-                                workOrder.id
-                                  ? "Processing..."
-                                  : "Pay Work Order"}
-                              </button>
-
-                            </div>
-                          )}
-
-                        {/* TRANSACTION PAID */}
-
-                        {hasCost &&
-                          transaction &&
-                          isPaid && (
-                            <div className="bg-green-50 border border-green-100 text-green-600 rounded-lg p-3 text-sm text-center">
-
-                              <p className="font-medium">
-                                Payment Completed
-                              </p>
-
-                              <p className="mt-1">
-                                $
-                                {Number(
-                                  transaction.amount
-                                ).toLocaleString()}
-                              </p>
-
-                            </div>
-                          )}
+                        <span>
+                          $
+                          {
+                            additionalCost.toLocaleString()
+                          }
+                        </span>
 
                       </div>
 
-                      {/* =========================
-                          DYNAMIC ROUTE
-                      ========================= */}
+                      <div className="border-t border-gray-100 mt-3 pt-3 flex justify-between">
 
-                      <Link
-                        href={`/landlord/WorkOrders/${workOrder.id}`}
-                        className="block text-center mt-4 border border-gray-300 rounded-lg py-2 text-sm hover:bg-gray-50"
-                      >
-                        View Details
-                      </Link>
+                        <span className="font-semibold">
+                          Total Cost
+                        </span>
+
+                        <span className="font-semibold">
+                          $
+                          {
+                            totalCost.toLocaleString()
+                          }
+                        </span>
+
+                      </div>
 
                     </div>
-                  );
-                }
-              )}
 
-            </div>
-          )}
+                    {/* =============================
+                        PAYMENT
+                    ============================= */}
+
+                    <div className="border-t border-gray-100 mt-5 pt-5">
+
+                      <p className="text-sm font-medium mb-3">
+                        Payment
+                      </p>
+
+                      {/* NO COST */}
+
+                      {totalCost <=
+                        0 && (
+
+                        <div className="bg-gray-50 text-gray-500 rounded-lg p-3 text-sm text-center">
+                          No payment required
+                        </div>
+
+                      )}
+
+                      {/* NO TRANSACTION */}
+
+                      {totalCost > 0 &&
+                        !transaction && (
+
+                        <div>
+
+                          <div className="bg-blue-50 border border-blue-100 text-blue-600 rounded-lg p-3 text-sm">
+
+                            <p className="font-medium">
+                              Payment Not Created
+                            </p>
+
+                            <p className="mt-1">
+                              Amount: $
+                              {
+                                totalCost.toLocaleString()
+                              }
+                            </p>
+
+                          </div>
+
+                          <button
+                            onClick={() =>
+                              handleCreatePayment(
+                                workOrder,
+                              )
+                            }
+                            disabled={
+                              creatingPaymentId ===
+                              workOrder.id
+                            }
+                            className="w-full mt-3 bg-[#FF5A3D] text-white py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+                          >
+
+                            {creatingPaymentId ===
+                            workOrder.id
+                              ? "Creating Payment..."
+                              : "Create Payment"}
+
+                          </button>
+
+                        </div>
+
+                      )}
+
+                      {/* =============================
+                          PAYMENT PENDING
+                      ============================= */}
+
+                      {totalCost > 0 &&
+                        transaction &&
+                        isPending && (
+
+                        <div className="bg-yellow-50 border border-yellow-100 text-yellow-700 rounded-lg p-3 text-sm">
+
+                          <p className="font-medium">
+                            Payment Pending
+                          </p>
+
+                          <p className="mt-1">
+                            Amount: $
+                            {
+                              Number(
+                                transaction.amount,
+                              ).toLocaleString()
+                            }
+                          </p>
+
+                          <p className="text-xs mt-2">
+                            Transaction #
+                            {
+                              transaction.id
+                            }
+                          </p>
+
+                        </div>
+
+                      )}
+
+                      {/* =============================
+                          PAYMENT PAID
+                      ============================= */}
+
+                      {totalCost > 0 &&
+                        transaction &&
+                        isPaid && (
+
+                        <div className="bg-green-50 border border-green-100 text-green-600 rounded-lg p-3 text-sm text-center">
+
+                          <p className="font-medium">
+                            Payment Completed
+                          </p>
+
+                          <p className="mt-1">
+                            $
+                            {
+                              Number(
+                                transaction.amount,
+                              ).toLocaleString()
+                            }
+                          </p>
+
+                          <p className="text-xs mt-2">
+                            Transaction #
+                            {
+                              transaction.id
+                            }
+                          </p>
+
+                        </div>
+
+                      )}
+
+                    </div>
+
+                    {/* =============================
+                        DETAILS
+                    ============================= */}
+
+                    <Link
+                      href={`/landlord/WorkOrders/${workOrder.id}`}
+                      className="block text-center mt-4 border border-gray-300 rounded-lg py-2 text-sm hover:bg-gray-50"
+                    >
+                      View Details
+                    </Link>
+
+                  </div>
+
+                );
+              },
+            )}
+
+          </div>
+        )}
 
       </section>
     </Layout>
