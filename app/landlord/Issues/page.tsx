@@ -252,10 +252,7 @@ export default function IssuesPage() {
     }
   };
 
-  // PATCH /landlord/issues/:landlordId/:issueId
-  // UpdateIssueDto only declares description?/image_url?, but the landlord
-  // service assigns the whole body onto the issue (Partial<IssueEntity>), so
-  // sending { status } here moves the issue: OPEN -> IN_PROGRESS -> RESOLVED.
+ 
   const handleAdvanceStatus = async (issue: Issue) => {
     const target = nextStatus[issue.status];
     if (!landlordId || !target) return;
@@ -273,7 +270,6 @@ export default function IssuesPage() {
       if (result.success) {
         setIssues((prev) => prev.map((i) => (i.id === issue.id ? result.data : i)));
       } else {
-        // fallback: refetch if the PATCH response shape is unexpected
         const refreshed = await api.get(`/landlord/issues/${landlordId}`);
         const refreshedResult = issueListSchema.safeParse(refreshed.data);
         if (refreshedResult.success) {

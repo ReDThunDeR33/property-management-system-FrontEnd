@@ -528,10 +528,7 @@ export default function Layout({ children }: Props) {
       </footer>
 
 
-      {/* =====================================================
-          NORMAL TOAST CONTAINER
-          Used for logout and other local messages
-      ====================================================== */}
+      
       <div className="fixed right-5 bottom-5 z-[60] flex flex-col gap-2">
 
         {toasts.map((toast) => (
@@ -560,28 +557,7 @@ export default function Layout({ children }: Props) {
       </div>
 
 
-      {/* =====================================================
-          PUSHER REAL-TIME NOTIFICATIONS
-          -----------------------------------------------------
-          This listens for:
-
-          1. new-issue
-          2. work-order-created
-          3. work-order-complete
-          4. transaction-paid
-
-          Because this Layout surrounds all landlord pages,
-          PusherNotifications works on:
-
-          /landlord/Dashboard
-          /landlord/Properties
-          /landlord/Tenants
-          /landlord/Issues
-          /landlord/WorkOrders
-          /landlord/Transactions
-          /landlord/Reviews
-          /landlord/Settings
-      ====================================================== */}
+      
       <PusherNotifications />
 
     </div>

@@ -56,6 +56,7 @@ export default async function DashboardPage() {
   try {
     const response = await api.get("/landlord/dashboard/summery", {
       params: { landlordId },
+      withCredentials: true,
     });
 
     const raw = Array.isArray(response.data) ? response.data[0] : response.data;
