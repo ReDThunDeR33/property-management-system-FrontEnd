@@ -43,7 +43,6 @@ const dashboardStatsSchema = z.object({
 
 type DashboardStats = z.infer<typeof dashboardStatsSchema>;
 
-// The dashboard's "recent issues" list only needs these fields.
 const issueSchema = z.object({
   id: z.number(),
   description: z.string().nullable(),
@@ -52,7 +51,6 @@ const issueSchema = z.object({
 });
 type Issue = z.infer<typeof issueSchema>;
 
-// The dashboard's "busy workers" list only needs these fields.
 const workerSchema = z.object({
   id: z.number(),
   name: z.string(),
@@ -115,7 +113,6 @@ export default async function StaffDashboard() {
   const tokenCookie = cookieStore.get("access_token");
   
 
-  //check if account_type is staff, if not redirect to login page
 
 
   let user = null;

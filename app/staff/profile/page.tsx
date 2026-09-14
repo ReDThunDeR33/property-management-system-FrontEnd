@@ -21,7 +21,6 @@ export default function ProfilePage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    // Only include a field if it's not empty, so blank fields don't overwrite existing data.
     const body = {
       ...(name && { name }),
       ...(email && { email }),

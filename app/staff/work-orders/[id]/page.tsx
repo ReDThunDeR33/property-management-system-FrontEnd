@@ -31,7 +31,6 @@ async function getWorkOrder(id: string): Promise<WorkOrder | null> {
   return parsed.success ? parsed.data : null;
 }
 
-// Which statuses a work order can move to next, per the backend's rules.
 function getAllowedStatuses(status: WorkOrderStatus): WorkOrderStatus[] {
   if (status === "pending") return ["pending", "assigned", "complete"];
   if (status === "assigned") return ["assigned", "tenant_confirmed", "pending", "complete"];
